@@ -25,7 +25,8 @@ const ADMIN_TABS = {
     overview: {title: 'Overview', loaded: false, load: loadOverview},
     professionals: {title: 'Professional Applications', loaded: false, load: loadProfessionals},
     bookings: {title: 'Bookings', loaded: false, load: loadBookings},
-    customers: {title: 'Customers', loaded: false, load: loadCustomers}
+    customers: {title: 'Customers', loaded: false, load: loadCustomers},
+    locations: {title: 'Provinces & Cities', loaded: false, load: loadProvinces}
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -43,6 +44,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initFilterBar('professionalsFilterBar', (status) => loadProfessionals(status));
     initFilterBar('bookingsFilterBar', (status) => loadBookings(status));
     initProfessionalsActions();
+    initFilterBar('provincesFilterBar', (status) => {
+        locationState.provinceFilter = status;
+        renderProvinces();
+    });
+    initFilterBar('citiesFilterBar', (status) => {
+        locationState.cityFilter = status;
+        renderCities();
+    });
+    initLocationActions();
     initAdminLogout();
 
     // Overview is the default open tab.
@@ -531,6 +541,255 @@ async function loadCustomers() {
     }).join('');
 }
 
+/* =========================================================================
+ PROVINCES & CITIES
+ Every province/city starts out PLANNED. Admin actions (PATCH
+ /provinces/:id or /cities/:id): Activate -> ACTIVE (+ launchedAt),
+ Pause -> PAUSED (service temporarily stopped), Resume -> ACTIVE again. Cities are loaded per province (GET
+ /cities?provinceId=..), matching how the customer-side pickers call it.
+ Status filter pills are applied client-side on the already-fetched list,
+ so switching Planned/Active doesn't re-hit the network.
+ ========================================================================= */
+const locationState = {
+    provinces: [],
+    cities: [],
+    provinceFilter: '',
+    cityFilter: '',
+    selectedProvince: null // {id, name}
+};
+
+async function loadProvinces() {
+    const loading = document.getElementById('provincesLoading');
+    const errorEl = document.getElementById('provincesError');
+    const emptyEl = document.getElementById('provincesEmpty');
+
+    loading.hidden = false;
+    errorEl.hidden = true;
+    emptyEl.hidden = true;
+    document.getElementById('provincesTableBody').innerHTML = '';
+
+    const res = await HearthAPI.viewProvinces('status', 'not_null');
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Could not load provinces. Please try again.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    locationState.provinces = itemsOf(res.result);
+    renderProvinces();
+}
+
+function renderProvinces() {
+    const body = document.getElementById('provincesTableBody');
+    const emptyEl = document.getElementById('provincesEmpty');
+    const items = filterByStatus(locationState.provinces, locationState.provinceFilter);
+
+    emptyEl.hidden = items.length !== 0;
+    const selectedId = locationState.selectedProvince ? String(locationState.selectedProvince.id) : null;
+
+    body.innerHTML = items.map(p => {
+        const id = String(p.provinceId);
+        const status = locationStatusOf(p);
+        return `
+      <tr${id === selectedId ? ' class="is-selected" style="background: var(--color-primary-10, rgba(0,0,0,0.04));"' : ''}>
+        <td>${escapeAdminHtml(id)}</td>
+        <td>${escapeAdminHtml(p.provinceName || '—')}</td>
+        <td>${adminBadge(status)}</td>
+        <td>${renderLaunchedAt(p, status)}</td>
+        <td>
+          <div class="admin-row-actions">
+            ${renderLocationStatusActions('province', id, p.provinceName, status)}
+            <button type="button" class="admin-action-link" data-kind="province" data-loc-action="view-cities"
+                    data-id="${escapeAdminHtml(id)}" data-name="${escapeAdminHtml(p.provinceName || '')}">View cities</button>
+          </div>
+        </td>
+      </tr>
+    `;
+    }).join('');
+}
+
+async function loadCities(provinceId, provinceName) {
+    locationState.selectedProvince = {id: provinceId, name: provinceName};
+    renderProvinces(); // highlight the selected row
+
+    const loading = document.getElementById('citiesLoading');
+    const errorEl = document.getElementById('citiesError');
+    const emptyEl = document.getElementById('citiesEmpty');
+
+    document.getElementById('citiesTitle').textContent = `Cities in ${provinceName || 'province ' + provinceId}`;
+    document.getElementById('citiesHint').hidden = true;
+    document.getElementById('citiesTableBody').innerHTML = '';
+    loading.hidden = false;
+    errorEl.hidden = true;
+    emptyEl.hidden = true;
+
+    const res = await HearthAPI.viewCities('provinceId', provinceId, 'status', 'not_null');
+
+    // Ignore a stale response if the admin clicked another province meanwhile.
+    if (!locationState.selectedProvince || String(locationState.selectedProvince.id) !== String(provinceId)) return;
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Could not load cities. Please try again.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    locationState.cities = itemsOf(res.result);
+    renderCities();
+}
+
+function renderCities() {
+    if (!locationState.selectedProvince) return;
+    const body = document.getElementById('citiesTableBody');
+    const emptyEl = document.getElementById('citiesEmpty');
+    const items = filterByStatus(locationState.cities, locationState.cityFilter);
+
+    emptyEl.hidden = items.length !== 0;
+    body.innerHTML = items.map(c => {
+        const id = String(c.cityId);
+        const status = locationStatusOf(c);
+        const actions = renderLocationStatusActions('city', id, c.cityName, status);
+        return `
+      <tr>
+        <td>${escapeAdminHtml(id)}</td>
+        <td>${escapeAdminHtml(c.cityName || '—')}</td>
+        <td>${adminBadge(status)}</td>
+        <td>${renderLaunchedAt(c, status)}</td>
+        <td>${actions ? `<div class="admin-row-actions">${actions}</div>` : '—'}</td>
+      </tr>
+    `;
+    }).join('');
+}
+
+/** launchedAt is only meaningful once a location has gone live, so it's shown
+ * for ACTIVE rows and kept visible for PAUSED ones (they were launched, just
+ * temporarily stopped); PLANNED rows show a dash. */
+function renderLaunchedAt(item, status) {
+    if (status !== 'ACTIVE' && status !== 'PAUSED') return '—';
+    return formatAdminDate(item.launchedAt);
+}
+
+/**
+ * Status lifecycle:  PLANNED --Activate--> ACTIVE --Pause--> PAUSED --Resume--> ACTIVE
+ * Returns the one action link that applies to the current status.
+ */
+function renderLocationStatusActions(kind, id, name, status) {
+    const action = {PLANNED: 'activate', ACTIVE: 'pause', PAUSED: 'resume'}[status];
+    if (!action) return '';
+    const cfg = LOCATION_ACTIONS[action];
+    return `<button type="button" class="admin-action-link ${cfg.linkClass}" data-kind="${kind}"
+              data-loc-action="${action}" data-id="${escapeAdminHtml(id)}"
+              data-name="${escapeAdminHtml(name || '')}">${cfg.label}</button>`;
+}
+
+/** Per-action config: link text/style, confirm-dialog copy, and the PATCH
+ * payload. Resume deliberately does NOT send launchedAt, so the original
+ * launch date survives a pause/resume cycle. */
+const LOCATION_ACTIONS = {
+    activate: {
+        label: 'Activate',
+        linkClass: 'admin-action-approve',
+        danger: false,
+        title: (n) => `Activate ${n}?`,
+        message: (l) => `This ${l} will be marked ACTIVE and become available for customers and professionals.`,
+        payload: () => ({status: 'ACTIVE', launchedAt: Date.now()})
+    },
+    pause: {
+        label: 'Pause',
+        linkClass: 'admin-action-reject',
+        danger: true,
+        title: (n) => `Pause ${n}?`,
+        message: (l) => `Service in this ${l} will be temporarily stopped. It will be marked PAUSED until you resume it.`,
+        payload: () => ({status: 'PAUSED'})
+    },
+    resume: {
+        label: 'Resume',
+        linkClass: 'admin-action-approve',
+        danger: false,
+        title: (n) => `Resume ${n}?`,
+        message: (l) => `Service in this ${l} will be restarted and it will be marked ACTIVE again. The original launch date is kept.`,
+        payload: () => ({status: 'ACTIVE'})
+    }
+};
+
+/* ---- delegated click handling for both tables ---------------------------- */
+function initLocationActions() {
+    const panel = document.getElementById('adminPanel-locations');
+    if (!panel) return;
+
+    panel.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-loc-action]');
+        if (!btn || btn.disabled) return;
+
+        const {kind, id, name, locAction} = btn.dataset;
+        if (locAction === 'view-cities') {
+            locationState.cityFilter = '';
+            resetFilterBar('citiesFilterBar');
+            loadCities(id, name);
+        } else if (LOCATION_ACTIONS[locAction]) {
+            confirmLocationStatusChange(kind, id, name, locAction, btn);
+        }
+    });
+}
+
+function confirmLocationStatusChange(kind, id, name, action, btn) {
+    const label = kind === 'province' ? 'province' : 'city';
+    const cfg = LOCATION_ACTIONS[action];
+    showAdminConfirmDialog({
+        title: cfg.title(name || `this ${label}`),
+        message: cfg.message(label),
+        confirmLabel: cfg.label,
+        danger: cfg.danger,
+        onConfirm: () => applyLocationStatusChange(kind, id, action, btn)
+    });
+}
+
+async function applyLocationStatusChange(kind, id, action, btn) {
+    const isProvince = kind === 'province';
+    const errorEl = document.getElementById(isProvince ? 'provincesError' : 'citiesError');
+    errorEl.hidden = true;
+    btn.disabled = true;
+
+    const payload = LOCATION_ACTIONS[action].payload();
+    const res = isProvince
+        ? await HearthAPI.updateProvince(id, payload)
+        : await HearthAPI.updateCity(id, payload);
+
+    if (!res.success) {
+        btn.disabled = false;
+        errorEl.textContent = res.message
+            || `Could not ${action} this ${isProvince ? 'province' : 'city'}. Please try again.`;
+        errorEl.hidden = false;
+        return;
+    }
+
+    // Patch the cached row with what was sent and re-render — no refetch needed.
+    const list = isProvince ? locationState.provinces : locationState.cities;
+    const idField = isProvince ? 'provinceId' : 'cityId';
+    const row = list.find(r => String(r[idField]) === String(id));
+    if (row) Object.assign(row, payload);
+
+    isProvince ? renderProvinces() : renderCities();
+}
+
+function locationStatusOf(item) {
+    return String(item.status || 'PLANNED').toUpperCase();
+}
+
+function filterByStatus(items, status) {
+    if (!status) return items;
+    return items.filter(i => locationStatusOf(i) === status);
+}
+
+function resetFilterBar(containerId) {
+    document.querySelectorAll(`#${containerId} .admin-filter-pill`).forEach(p => {
+        p.classList.toggle('is-active', !p.dataset.status);
+    });
+}
+
 /* ---- shared helpers ------------------------------------------------------ */
 
 /** Normalizes a list response to a plain array regardless of the wrapper
@@ -563,6 +822,8 @@ function adminBadge(status) {
     const s = String(status || '').toUpperCase();
     const cls = {
         PENDING: 'admin-badge-pending',
+        PLANNED: 'admin-badge-pending',
+        PAUSED: 'admin-badge-neutral',
         APPROVED: 'admin-badge-approved',
         ACTIVE: 'admin-badge-active',
         COMPLETED: 'admin-badge-completed',

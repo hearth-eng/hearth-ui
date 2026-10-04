@@ -41,6 +41,47 @@ async function viewAll(req, res) {
     }
 }
 
+async function modify(req, res) {
+    let payload = req.body;
+
+    if (! payload || Object.keys(payload).length === 0) {
+        return res.status(400)
+                .set('Content-Type', 'application/json')
+                .json({message: 'Missing or empty json payload'});
+    }
+    
+    try {
+        let cityId = req.params.id;
+        const response = await httpClient.patch(
+            '/cities/' + cityId
+            , payload
+            , {
+                headers: {
+                    Authorization: `Bearer ${req.token}`
+                }
+            }
+        );
+        if (response.status === 200) {
+            let result = response.data;
+            if (log.isDebugEnabled()) {
+                log.debug('Successfully modified city: %d', result.cityId);
+            }
+            return res.status(response.status)
+                    .json(result);
+        }
+        else {
+            let result = response.data;
+            log.error('Unable to modified city details. Status code: %d. Error Msg: %s', response.status, result);
+            
+            return res.status(response.status)
+                    .json(result);
+        }
+    }
+    catch (err) {
+        handleError(req, res, err, 'Error in modifying city details');
+    }
+}
+
 async function handleError(req, res, err, msg) {
     log.error(msg, err);
 
@@ -54,5 +95,6 @@ async function handleError(req, res, err, msg) {
 }
 
 route.get('/', viewAll);
+route.patch('/:id', modify);
 
 module.exports = route;

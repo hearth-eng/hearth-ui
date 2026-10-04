@@ -286,8 +286,16 @@ const HearthAPI = (function () {
      * locality picker shown before a customer can add an address.
      * @returns {Promise<{success: boolean, message?: string, result?: object}>}
      */
-    async function viewProvinces() {
-        return await invoke('/provinces', 'GET');
+    async function viewProvinces(...params) {
+        const searchParams = new URLSearchParams();
+
+        // Loop through parameters two at a time (Key, Value)
+        for (let i = 0; i < params.length; i += 2) {
+            if (params[i] && params[i + 1] !== undefined) {
+                searchParams.append(params[i], params[i + 1]);
+            }
+        }
+        return await invoke('/provinces?' + searchParams.toString(), 'GET');
     }
 
     /**
@@ -295,8 +303,16 @@ const HearthAPI = (function () {
      * Returns the cities within the given state that Hearth operates in.
      * @returns {Promise<{success: boolean, message?: string, result?: object}>}
      */
-    async function viewCities(key, value) {
-        return await invoke('/cities?' + key + '=' + encodeURIComponent(value), 'GET');
+    async function viewCities(...params) {
+        const searchParams = new URLSearchParams();
+
+        // Loop through parameters two at a time (Key, Value)
+        for (let i = 0; i < params.length; i += 2) {
+            if (params[i] && params[i + 1] !== undefined) {
+                searchParams.append(params[i], params[i + 1]);
+            }
+        }
+        return await invoke('/cities?' + searchParams.toString(), 'GET');
     }
 
     /**
@@ -500,6 +516,14 @@ const HearthAPI = (function () {
     async function viewVouchers() {
         return await invoke('/coupons', 'GET');
     }
+    
+    async function updateProvince(id, payload) {
+        return await invoke('/provinces/' + id, 'PATCH', payload);
+    }
+    
+    async function updateCity(id, payload) {
+        return await invoke('/cities/' + id, 'PATCH', payload);
+    }
 
     /* =====================================================================
      ADMIN
@@ -676,6 +700,8 @@ const HearthAPI = (function () {
         deleteAddress,
         viewProvinces,
         viewCities,
+        updateProvince,
+        updateCity,
         viewNeighbourhoods,
         checkPincode,
         viewCategories,
