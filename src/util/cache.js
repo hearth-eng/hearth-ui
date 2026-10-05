@@ -17,10 +17,12 @@ class RedisClient {
             return;
         }
         
-        const protocol = 'redis://';
         const host = process.env.REDIS_HOST || 'localhost';
         const port = process.env.REDIS_PORT || '6379';
-        const url = `${protocol}${host}:${port}`;
+        const url = process.env.REDIS_URL || `redis://${host}:${port}`;
+        // Safe-for-logging form: redact any embedded auth token (e.g. rediss://:TOKEN@host:port)
+        // before it ever reaches the logs.
+        const safeUrl = url.replace(/\/\/[^@/]*@/, '//<redacted>@');
 
         const start = Date.now();
 
@@ -28,7 +30,7 @@ class RedisClient {
 
         this.client.on('connect', () => {
             if (log.isInfoEnabled()) {
-                log.info(`Connecting to redis [ Url: ${url} ] ... `);
+                log.info(`Connecting to redis [ Url: ${safeUrl} ] ... `);
             }
         });
 

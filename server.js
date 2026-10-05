@@ -95,11 +95,11 @@ async function start() {
     await cache.init();
     
     const httpsOptions = {
-        key: fs.readFileSync('./cert/node-ext.key'),
-        cert: fs.readFileSync('./cert/node-ext.crt')
+        key: fs.readFileSync(process.env.TLS_SERVER_KEY_PATH || './cert/node-ext.key'),
+        cert: fs.readFileSync(process.env.TLS_SERVER_CERT_PATH || './cert/node-ext.crt')
     };
-    
-    https.createServer(httpsOptions, app).listen(8443, () => {
+
+    https.createServer(httpsOptions, app).listen(port, () => {
         log.info('Started hearth node server. Listening to: %d', port);
     });
     
