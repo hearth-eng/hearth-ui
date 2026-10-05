@@ -52,7 +52,10 @@ function setup() {
     
     // Middleware to parse cookie
     app.use(cookieParser());
-    
+
+    // ALB target group health check - unauthenticated, outside basePath
+    app.get('/health', (req, res) => res.sendStatus(200));
+
     app.use(basePath, accessLog);
     
     // Everything below this requires authentication
