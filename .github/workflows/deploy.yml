@@ -1,0 +1,115 @@
+# hearth-ui: push tag vX.Y.Z  ->  build image  ->  push to ECR  ->  rolling deploy on ECS
+# Re-deploy / roll back: Actions -> "deploy" -> Run workflow -> enter an existing tag.
+name: deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to (re)deploy, e.g. v1.4.0"
+        required: true
+
+permissions:
+  id-token: write # GitHub OIDC -> AWS role (no stored AWS keys)
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: hearth-ui
+  ECS_CLUSTER: hearth-prod
+  ECS_SERVICE: hearth-prod-ui
+  TASK_FAMILY: hearth-prod-ui
+  CONTAINER_NAME: ui
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod # must match the OIDC trust in bootstrap; add reviewers here if you want approvals
+    timeout-minutes: 40
+    steps:
+      - name: Resolve tag
+        id: v
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "tag=${INPUT_TAG:-$REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.v.outputs.tag }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Check if image already exists
+        id: exists
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"; echo "Image $TAG already in ECR - skipping build"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.found == 'false'
+
+      - name: Build & push image (npm ci inside Docker)
+        if: steps.exists.outputs.found == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.v.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Deploy to ECS
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.v.outputs.tag }}
+        run: |
+          set -euo pipefail
+          status=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+                     --query 'services[0].status' --output text 2>/dev/null || echo MISSING)
+          if [ "$status" != "ACTIVE" ]; then
+            echo "::warning::ECS service $ECS_SERVICE does not exist yet - image pushed only (first-time bring-up)."
+            exit 0
+          fi
+
+          # Take the LATEST revision (so env/secret changes made by Terraform are kept) and swap the image
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" --query taskDefinition > td.json
+          jq --arg IMG "$IMAGE" --arg C "$CONTAINER_NAME" '
+              .containerDefinitions |= map(if .name == $C then .image = $IMG else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' td.json > td-new.json
+          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+                     --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_TD"
+
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "$NEW_TD" > /dev/null
+          echo "Waiting for rollout..."
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+
+          # services-stable also succeeds after a circuit-breaker ROLLBACK, so verify explicitly
+          read -r CUR STATE < <(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState]' --output text)
+          echo "Primary deployment: $CUR ($STATE)"
+          if [ "$CUR" != "$NEW_TD" ] || [ "$STATE" != "COMPLETED" ]; then
+            echo "::error::Deployment failed or was rolled back. Check CloudWatch logs /ecs/$ECS_SERVICE"
+            exit 1
+          fi
+          echo "### Deployed ${IMAGE##*/} to $ECS_SERVICE" >> "$GITHUB_STEP_SUMMARY"
