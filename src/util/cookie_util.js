@@ -11,14 +11,22 @@ class CookieUtil {
 
     static COOKIE_OPTS = {
         httpOnly: true,                 // Protects against XSS attacks (not accessible via client JS)
-        secure: true,                   // Only sent over HTTPS
+        // Only sent over HTTPS. Defaults to true (secure); set COOKIE_SECURE=false
+        // only for a plain-HTTP interim deployment (e.g. before an ACM cert is on
+        // the ALB) - a Secure cookie is never sent back by the browser over HTTP,
+        // which otherwise breaks every flow that relies on this cookie round-tripping.
+        secure: (process.env.COOKIE_SECURE ?? 'true') !== 'false',
         sameSite: 'lax',                // Mitigates CSRF attacks
         path: (process.env.BASE_PATH || '/gateway/v1/')
     };
 
     static prepare(ttlMin, uri) {
-        let cookieOpts = CookieUtil.COOKIE_OPTS;
-        
+        // Copy, don't mutate CookieUtil.COOKIE_OPTS directly - it's a single shared
+        // static object, and this function runs concurrently across requests on one
+        // Node process. Mutating it in place let a truthy `uri` on one call corrupt
+        // `path` for every other call for the lifetime of the process.
+        let cookieOpts = { ...CookieUtil.COOKIE_OPTS };
+
         cookieOpts.maxAge = ttlMin * 60 * 1000;     // maxAge is always in milliseconds
         if (uri) {
             cookieOpts.path = cookieOpts.path + 'uri';

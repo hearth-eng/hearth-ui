@@ -209,13 +209,8 @@ async function adminLogin(req, res) {
             const data = response.data || {};
             
             return res.status(200)
-                .cookie('_fks', data.access_token, {
-                    maxAge: parseInt(data.expires_in) * 1000,
-                    httpOnly: true,                 // Protects against XSS attacks (not accessible via client JS)
-                    secure: true,                   // Only sent over HTTPS
-                    sameSite: 'lax',                // Mitigates CSRF attacks
-                    path: process.env.BASE_PATH || '/gateway/v1'
-                })
+                .cookie(CookieUtil.STD_COOKIE, data.access_token,
+                    CookieUtil.prepare(parseInt(data.expires_in) / 60))
                 .json({success: true});
         }
         else {
