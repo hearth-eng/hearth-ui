@@ -8,3 +8,6 @@ nbproject/
 *.iml
 .idea
 package-lock.json
+keystore/hearth.pkcs
+keystore/hearth_prv.pem
+keystore/hearth_pub.pem
