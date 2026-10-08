@@ -1,4 +1,3 @@
-const fs = require('node:fs');
 const https = require('node:https');
 const express = require('express');
 const url = require('url');
@@ -8,6 +7,7 @@ const cookieParser = require('cookie-parser');
 const keyStore = require('./src/auth/keystore');
 const mtlsStore = require('./src/auth/mtlsstore');
 const caStore = require('./src/auth/castore');
+const tlsStore = require('./src/auth/tlsstore');
 const { authenticate } = require('./src/auth/auth');
 const accessLog = require('./src/util/access_logger');
 const { getLogger } = require('./src/util/logger');
@@ -98,12 +98,15 @@ async function start() {
     keyStore.init();
     mtlsStore.init();
     caStore.init();
-    
+    tlsStore.init();
+
     await cache.init();
-    
+
+    // hearth-ui's own HTTPS server identity is separate from its mTLS client
+    // identity (calling hearth-app) - this cert is only for the browser/ALB hop.
     const httpsOptions = {
-        key: fs.readFileSync(process.env.TLS_SERVER_KEY_PATH || './cert/node-ext.key'),
-        cert: fs.readFileSync(process.env.TLS_SERVER_CERT_PATH || './cert/node-ext.crt')
+        key: tlsStore.getPrivateKey(),
+        cert: tlsStore.getCertificate()
     };
 
     https.createServer(httpsOptions, app).listen(port, () => {

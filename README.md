@@ -47,40 +47,6 @@ npm install
 
 Create a `.env` in the repo root (never commit this — it's already in `.gitignore`) with at least:
 
-```bash
-PORT=8443
-BASE_PATH=/gateway/v1
-
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-HEARTH_SERVER=https://localhost:9443     # the Vert.x backend
-STORE_PASS=secret                       # keystore password
-
-# mTLS: Node's client identity when calling the Vert.x backend, and the CA
-# that lets Node trust the Vert.x server's certificate.
-MTLS_CLIENT_KEY_PATH=./cert/hearth-ui.key
-MTLS_CLIENT_CERT_PATH=./cert/hearth-ui.crt
-MTLS_CA_CERT_PATH=./ca/ca_javalabs.crt
-MTLS_SERVER_NAME=localhost
-
-OTP_EXP_MIN=5
-TOKEN_TTL_MIN=600
-
-AUTH_TOKEN_URL=/mgmt/login
-SERVICE_CLIENT_ID=<your client id>
-SERVICE_CLIENT_SECRET=<your client secret>
-
-LOG_LEVEL=trace
-
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=<you>@gmail.com
-SMTP_PASS=<app password>
-SMTP_FROM=<you>@gmail.com
-```
-
 Start Redis/Memurai (see below), make sure the Vert.x backend is up, then:
 
 ```bash
