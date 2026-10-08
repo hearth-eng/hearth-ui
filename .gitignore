@@ -1,5 +1,6 @@
 node_modules/
 .env
+/logs/
 *.log
 *.log.swp
 .DS_Store
@@ -8,6 +9,3 @@ nbproject/
 *.iml
 .idea
 package-lock.json
-keystore/hearth.pkcs
-keystore/hearth_prv.pem
-keystore/hearth_pub.pem

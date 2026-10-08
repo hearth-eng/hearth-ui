@@ -6,6 +6,8 @@ const path = require('path');
 const cookieParser = require('cookie-parser');
 
 const keyStore = require('./src/auth/keystore');
+const mtlsStore = require('./src/auth/mtlsstore');
+const caStore = require('./src/auth/castore');
 const { authenticate } = require('./src/auth/auth');
 const accessLog = require('./src/util/access_logger');
 const { getLogger } = require('./src/util/logger');
@@ -94,6 +96,8 @@ function setup() {
 async function start() {
     setup();
     keyStore.init();
+    mtlsStore.init();
+    caStore.init();
     
     await cache.init();
     

@@ -13,11 +13,32 @@ class HttpClient {
         this.server = process.env.HEARTH_SERVER || 'http://localhost:8080';
         this.contextRoot = process.env.HEARTH_CONTEXT_ROOT || '/api/v1';
         
+        // 1. key + cert: This is hearth-ui's own client identity. In mutual TLS, the client has to prove who it is too,
+        //    not just the server. When Node (as the TLS client here) connects to hearth-app, hearth-app's server will
+        //    request a client certificate during the handshake; Node presents cert (signed by the CA) and proves it holds
+        //    the matching key by signing part of the handshake with it.
+        //    key and cert are read from one combined PEM file (private key block followed by the cert block) rather
+        //    than two separate files - Node's https.Agent accepts PEM content directly, so there's no need for a
+        //    PKCS12-style keystore to deliver these two together the way Java does.
+        //
+        // 2. ca: This is what lets Node (the client) validate hearth-app's server certificate.
+        //    Since rejectUnauthorized: true is set, Node will refuse the connection unless hearth-app's presented server
+        //    cert chains up to a CA it trusts. hearth-app's server cert is signed by our private/self-signed mTLS CA
+        //    (not a public CA like Let's Encrypt), so the public Node's trust store has no idea who that CA is — we
+        //    have to hand Node that CA cert explicitly via ca, or every connection would throw UNABLE_TO_VERIFY_LEAF_SIGNATURE.
+        const clientBundle = fs.readFileSync(process.env.MTLS_CLIENT_STORE, 'utf8');
+        const clientKey = clientBundle.match(/-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA )?PRIVATE KEY-----/);
+        const clientCert = clientBundle.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/);
+
+        if (! clientKey || ! clientCert) {
+            throw new Error('MTLS_CLIENT_PATH must contain both a PRIVATE KEY and a CERTIFICATE PEM block');
+        }
+
         const httpsAgent = new https.Agent({
-            key: fs.readFileSync(process.env.MTLS_CLIENT_KEY_PATH),
-            cert: fs.readFileSync(process.env.MTLS_CLIENT_CERT_PATH),
-            ca: fs.readFileSync(process.env.MTLS_CA_CERT_PATH),
-            
+            key: clientKey[0],
+            cert: clientCert[0],
+            ca: fs.readFileSync(process.env.MTLS_CA_STORE),
+
             rejectUnauthorized: true,
             servername: process.env.MTLS_SERVER_NAME || 'localhost',
             minVersion: 'TLSv1.2'
