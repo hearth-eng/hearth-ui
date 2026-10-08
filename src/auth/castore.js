@@ -6,7 +6,7 @@ const pemutil = require('./../util/pemutil');
 
 const log = getLogger(path.basename(__filename, '.js'));
 
-const certFile = path.join(__dirname, '..', '..', process.env.CA_STORE || 'store/ca_javalabs.crt');
+const certFile = path.join(__dirname, '..', '..', process.env.MTLS_CA_STORE || 'store/ca_javalabs.crt');
 const ALIAS = 'ca_javalabs';
 
 class CaStore {

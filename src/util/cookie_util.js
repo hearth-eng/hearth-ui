@@ -11,11 +11,11 @@ class CookieUtil {
 
     static COOKIE_OPTS = {
         httpOnly: true,                 // Protects against XSS attacks (not accessible via client JS)
-        // Only sent over HTTPS. Defaults to true (secure); set COOKIE_SECURE=false
+        // Only sent over HTTPS. Defaults to true (secure); set SECURE_COOKIE=false
         // only for a plain-HTTP interim deployment (e.g. before an ACM cert is on
         // the ALB) - a Secure cookie is never sent back by the browser over HTTP,
         // which otherwise breaks every flow that relies on this cookie round-tripping.
-        secure: (process.env.COOKIE_SECURE ?? 'true') !== 'false',
+        secure: (process.env.SECURE_COOKIE ?? 'true') !== 'false',
         sameSite: 'lax',                // Mitigates CSRF attacks
         path: (process.env.BASE_PATH || '/gateway/v1/')
     };

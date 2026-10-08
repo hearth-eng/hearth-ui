@@ -24,9 +24,9 @@ class KeyStore {
             return;
         }
 
-        const password = process.env.HEARTH_KEYSTORE_PASSWORD || 'secret';
+        const password = process.env.STORE_PASS || 'secret';
         if (! password) {
-            throw new Error('HEARTH_KEYSTORE_PASSWORD is not set');
+            throw new Error('STORE_PASS is not set');
         }
 
         // 1. Read the binary .pkcs file from disk
