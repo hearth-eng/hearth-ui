@@ -59,6 +59,10 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15" r="2" stroke="currentColor" stroke-width="1.6"/></svg>
                         <span>Professional Calendar</span>
                     </button>
+                    <button type="button" class="admin-nav-item" data-tab="redis">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3" stroke="currentColor" stroke-width="2"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" stroke="currentColor" stroke-width="2"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" stroke="currentColor" stroke-width="2"/></svg>
+                        <span>Redis</span>
+                    </button>
                 </nav>
 
                 <div class="admin-sidebar-footer">
@@ -388,6 +392,47 @@
                                 <tbody id="pcResultBody"></tbody>
                             </table>
                         </div>
+                    </section>
+
+                    <!-- ---- Redis ---- -->
+                    <section class="admin-panel" id="adminPanel-redis" hidden>
+                        <p class="admin-empty-state" style="margin-top:0;">
+                            Read-only browser. Showing live OTP/session records — no write or delete from this screen.
+                        </p>
+
+                        <div class="admin-form-row">
+                            <div class="form-field" style="flex: 2 1 320px;">
+                                <label for="redisPatternInput">Key pattern</label>
+                                <input type="text" id="redisPatternInput" placeholder="e.g. 91* or *@gmail.com — blank for all keys">
+                            </div>
+                        </div>
+                        <div class="admin-sql-actions">
+                            <button type="button" class="btn btn-primary btn-ripple" id="redisListBtn">List keys</button>
+                            <span class="admin-sql-rowcount" id="redisKeyCount"></span>
+                        </div>
+
+                        <p class="admin-loading-state" id="redisListLoading" hidden>Scanning keys…</p>
+                        <p class="admin-error-state" id="redisListError" hidden></p>
+                        <p class="admin-empty-state" id="redisListEmpty" hidden>No keys match this pattern.</p>
+
+                        <div class="admin-table-wrap" id="redisListWrap" hidden>
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th>Key</th>
+                                        <th>Type</th>
+                                        <th>TTL</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="redisListBody"></tbody>
+                            </table>
+                        </div>
+
+                        <h2 class="admin-section-title" id="redisDetailTitle" hidden>Value</h2>
+                        <p class="admin-loading-state" id="redisDetailLoading" hidden>Loading…</p>
+                        <p class="admin-error-state" id="redisDetailError" hidden></p>
+                        <pre class="admin-table-wrap" id="redisDetailValue" hidden
+                             style="padding: var(--space-sm); white-space: pre-wrap; word-break: break-all; font-family: var(--font-mono); font-size: 0.85rem;"></pre>
                     </section>
 
                 </main>

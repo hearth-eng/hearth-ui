@@ -62,6 +62,37 @@ class RedisClient {
     async remove(key) {
         return this.client.del(key);
     }
+
+    /**
+     * Read-only key browsing for the admin "Redis" tab (see redisMgmt.js).
+     * Uses SCAN rather than KEYS - KEYS blocks the single-threaded Redis
+     * event loop for the full keyspace scan, which is a real risk on a
+     * shared production instance; SCAN cursors through incrementally
+     * instead. `pattern` follows Redis glob syntax (e.g. "91*" for every
+     * key starting with "91"); defaults to "*" (everything).
+     */
+    async scanKeys(pattern, count) {
+        const keys = [];
+        let cursor = '0';
+        const matchPattern = pattern && pattern.trim() ? pattern.trim() : '*';
+        const scanCount = count || 100;
+
+        do {
+            const result = await this.client.scan(cursor, {MATCH: matchPattern, COUNT: scanCount});
+            cursor = result.cursor;
+            keys.push(...result.keys);
+        } while (cursor !== '0' && keys.length < 1000); // hard cap - this is a browsing tool, not an export
+
+        return keys;
+    }
+
+    async ttl(key) {
+        return this.client.ttl(key);
+    }
+
+    async type(key) {
+        return this.client.type(key);
+    }
 }
 
 module.exports = new RedisClient();

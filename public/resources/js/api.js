@@ -620,6 +620,56 @@ const HearthAPI = (function () {
     }
 
     /**
+     * GET /admin/redis/keys?pattern=... — admin-only, read-only. `pattern`
+     * is a Redis glob pattern (e.g. "91*"); omit for every key.
+     * @returns {Promise<{success: boolean, message?: string, result?: {items: Array}}>}
+     */
+    async function viewRedisKeys(pattern) {
+        try {
+            const qs = pattern ? '?pattern=' + encodeURIComponent(pattern) : '';
+            const res = await fetch(BASE_URL + '/admin/redis/keys' + qs, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {'Content-Type': 'application/json'}
+            });
+            let json = await res.json();
+
+            if (res.status === 200) {
+                return {success: true, result: json};
+            } else {
+                return {success: false, message: json.message};
+            }
+        } catch (e) {
+            console.error('[Hearth] Failed to list redis keys:', e);
+            return {success: false, message: e.message};
+        }
+    }
+
+    /**
+     * GET /admin/redis/keys/:key — admin-only, read-only.
+     * @returns {Promise<{success: boolean, message?: string, result?: {key, type, ttl, value}}>}
+     */
+    async function viewRedisKey(key) {
+        try {
+            const res = await fetch(BASE_URL + '/admin/redis/keys/' + encodeURIComponent(key), {
+                method: 'GET',
+                credentials: 'include',
+                headers: {'Content-Type': 'application/json'}
+            });
+            let json = await res.json();
+
+            if (res.status === 200) {
+                return {success: true, result: json};
+            } else {
+                return {success: false, message: json.message};
+            }
+        } catch (e) {
+            console.error('[Hearth] Failed to view redis key:', e);
+            return {success: false, message: e.message};
+        }
+    }
+
+    /**
      * POST /admin/availabilities/calendar — admin-only. Triggers hearth-app's
      * async calendar generation job. `numberOfDays` and `professionalIds` are
      * both optional (numberOfDays defaults to 5 server-side) - pass {} to
@@ -809,6 +859,8 @@ const HearthAPI = (function () {
         adminLogin,
         query,
         dbQuery,
+        viewRedisKeys,
+        viewRedisKey,
         generateAvailabilityCalendar,
         viewProfessionalAvailability,
         queryApplication,

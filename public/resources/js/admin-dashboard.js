@@ -30,7 +30,9 @@ const ADMIN_TABS = {
     // No fetch on first visit - there's nothing to run until the admin types a
     // query and clicks Execute (see initExecuteSql below).
     'execute-sql': {title: 'Execute SQL', loaded: true, load: () => {}},
-    'prof-calendar': {title: 'Professional Calendar', loaded: false, load: loadProfCalendarCategories}
+    'prof-calendar': {title: 'Professional Calendar', loaded: false, load: loadProfCalendarCategories},
+    // Same as execute-sql - nothing to fetch until the admin clicks "List keys".
+    redis: {title: 'Redis', loaded: true, load: () => {}}
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -59,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initLocationActions();
     initExecuteSql();
     initProfCalendar();
+    initRedisBrowser();
     initAdminLogout();
 
     // Overview is the default open tab.
@@ -1308,6 +1311,136 @@ function formatAdminTime(value) {
     // trims to "HH:MM" for display.
     const match = String(value).match(/^(\d{2}):(\d{2})/);
     return match ? `${match[1]}:${match[2]}` : String(value);
+}
+
+/* ---- Redis -----------------------------------------------------------
+   Read-only key browser (GET /admin/redis/keys, GET /admin/redis/keys/:key).
+   No write/delete UI by design - this app's only Redis data today is live
+   OTP records (see otp.js/cache.js), so this is a support/debugging view,
+   not a Redis management console. Listing shows key/type/ttl only; the
+   value is fetched separately when an admin clicks a specific key, so
+   browsing a large keyspace doesn't pull every value over the wire at once.
+   ------------------------------------------------------------------------ */
+function initRedisBrowser() {
+    document.getElementById('redisListBtn').addEventListener('click', listRedisKeys);
+    document.getElementById('redisPatternInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            listRedisKeys();
+        }
+    });
+}
+
+async function listRedisKeys() {
+    const pattern = document.getElementById('redisPatternInput').value.trim();
+
+    const btn = document.getElementById('redisListBtn');
+    const loading = document.getElementById('redisListLoading');
+    const errorEl = document.getElementById('redisListError');
+    const emptyEl = document.getElementById('redisListEmpty');
+    const listWrap = document.getElementById('redisListWrap');
+    const countEl = document.getElementById('redisKeyCount');
+
+    btn.disabled = true;
+    loading.hidden = false;
+    errorEl.hidden = true;
+    emptyEl.hidden = true;
+    listWrap.hidden = true;
+    countEl.textContent = '';
+    hideRedisDetail();
+
+    const res = await HearthAPI.viewRedisKeys(pattern);
+
+    btn.disabled = false;
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Could not list keys. Please try again.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    const items = (res.result && res.result.items) || [];
+    renderRedisKeyList(items);
+}
+
+function renderRedisKeyList(items) {
+    const emptyEl = document.getElementById('redisListEmpty');
+    const listWrap = document.getElementById('redisListWrap');
+    const countEl = document.getElementById('redisKeyCount');
+    const body = document.getElementById('redisListBody');
+
+    if (items.length === 0) {
+        emptyEl.hidden = false;
+        listWrap.hidden = true;
+        return;
+    }
+
+    body.innerHTML = items.map(item => `
+      <tr>
+        <td><button type="button" class="admin-action-link" data-redis-key="${escapeAdminHtml(item.key)}">${escapeAdminHtml(item.key)}</button></td>
+        <td>${escapeAdminHtml(item.type)}</td>
+        <td>${escapeAdminHtml(formatRedisTtl(item.ttl))}</td>
+      </tr>
+    `).join('');
+
+    body.querySelectorAll('[data-redis-key]').forEach(btn => {
+        btn.addEventListener('click', () => viewRedisKey(btn.dataset.redisKey));
+    });
+
+    countEl.textContent = `${items.length} key${items.length === 1 ? '' : 's'}`;
+    listWrap.hidden = false;
+}
+
+function formatRedisTtl(ttl) {
+    if (ttl === -1) return 'no expiry';
+    if (ttl === -2) return 'expired';
+    if (ttl < 60) return `${ttl}s`;
+    return `${Math.floor(ttl / 60)}m ${ttl % 60}s`;
+}
+
+async function viewRedisKey(key) {
+    const title = document.getElementById('redisDetailTitle');
+    const loading = document.getElementById('redisDetailLoading');
+    const errorEl = document.getElementById('redisDetailError');
+    const valueEl = document.getElementById('redisDetailValue');
+
+    title.textContent = `Value — ${key}`;
+    title.hidden = false;
+    loading.hidden = false;
+    errorEl.hidden = true;
+    valueEl.hidden = true;
+
+    const res = await HearthAPI.viewRedisKey(key);
+
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Could not load this key. It may have expired.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    const {type, ttl, value} = res.result;
+    valueEl.textContent = `type: ${type}    ttl: ${formatRedisTtl(ttl)}\n\n${formatRedisValue(value)}`;
+    valueEl.hidden = false;
+}
+
+function formatRedisValue(value) {
+    if (value === null || value === undefined) return '(non-string value type - not supported in this view)';
+    // Pretty-print if it's JSON (every OTP record is), otherwise show as-is.
+    try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+    }
+    catch {
+        return value;
+    }
+}
+
+function hideRedisDetail() {
+    document.getElementById('redisDetailTitle').hidden = true;
+    document.getElementById('redisDetailValue').hidden = true;
+    document.getElementById('redisDetailError').hidden = true;
 }
 
 /* ---- shared helpers ------------------------------------------------------ */

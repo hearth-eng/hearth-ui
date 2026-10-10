@@ -34,6 +34,7 @@ const queryRoute = require('./src/routes/query');
 const profMgmtRoute = require('./src/routes/professionalMgmt');
 const availMgmtRoute = require('./src/routes/availabilityMgmt');
 const dbQueryRoute = require('./src/routes/dbQuery');
+const redisMgmtRoute = require('./src/routes/redisMgmt');
 
 const serveStatic = require('./src/staticServer');
 
@@ -91,6 +92,7 @@ function setup() {
     app.use(basePath + '/admin/professionals', profMgmtRoute);
     app.use(basePath + '/admin/availabilities', availMgmtRoute);
     app.use(basePath + '/admin/dbQuery', dbQueryRoute);
+    app.use(basePath + '/admin/redis', redisMgmtRoute);
     
 
     // Middleware to serve static files from a directory
