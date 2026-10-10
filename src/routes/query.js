@@ -1,5 +1,4 @@
 const express = require('express');
-const tokenMgr = require('./../auth/token_mgr');
 const httpClient = require('./../util/http_client');
 const {getLogger} = require('./../util/logger');
 

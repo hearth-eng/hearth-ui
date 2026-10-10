@@ -26,7 +26,11 @@ const ADMIN_TABS = {
     professionals: {title: 'Professional Applications', loaded: false, load: loadProfessionals},
     bookings: {title: 'Bookings', loaded: false, load: loadBookings},
     customers: {title: 'Customers', loaded: false, load: loadCustomers},
-    locations: {title: 'Provinces & Cities', loaded: false, load: loadProvinces}
+    locations: {title: 'Provinces & Cities', loaded: false, load: loadProvinces},
+    // No fetch on first visit - there's nothing to run until the admin types a
+    // query and clicks Execute (see initExecuteSql below).
+    'execute-sql': {title: 'Execute SQL', loaded: true, load: () => {}},
+    'prof-calendar': {title: 'Professional Calendar', loaded: false, load: loadProfCalendarCategories}
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -53,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderCities();
     });
     initLocationActions();
+    initExecuteSql();
+    initProfCalendar();
     initAdminLogout();
 
     // Overview is the default open tab.
@@ -788,6 +794,520 @@ function resetFilterBar(containerId) {
     document.querySelectorAll(`#${containerId} .admin-filter-pill`).forEach(p => {
         p.classList.toggle('is-active', !p.dataset.status);
     });
+}
+
+/* ---- Execute SQL --------------------------------------------------------
+   POST /admin/dbQuery runs the raw query text as-is and returns a bare JSON
+   array of row-arrays (no column names, no metadata - see DBQueryHandler /
+   DBQueryBO on the backend). There is nothing here to infer real column
+   names from, so the table header just reads "Column 1", "Column 2", ... -
+   this is a DBA-style raw query tool, not a reporting view.
+
+   Only SELECT runs without confirmation. Anything else (INSERT/UPDATE/DELETE,
+   or anything the admin typed that doesn't start with SELECT) asks for
+   confirmation first, since it can modify or destroy data - this UI has no
+   way to know in advance whether a non-SELECT statement is safe. DDL
+   (CREATE/ALTER/DROP/...) is intentionally NOT specially handled here beyond
+   that same confirmation - if the backend's own DML_HINT handling (see
+   DBQueryBO) rejects or allows a given statement, that's enforced server-side,
+   not re-implemented in this UI. ------------------------------------------ */
+function initExecuteSql() {
+    const btn = document.getElementById('executeSqlBtn');
+    if (!btn) return;
+    btn.addEventListener('click', runSqlQuery);
+
+    // Ctrl/Cmd+Enter runs the query without leaving the textarea.
+    document.getElementById('sqlQueryInput').addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            runSqlQuery();
+        }
+    });
+}
+
+async function runSqlQuery() {
+    const input = document.getElementById('sqlQueryInput');
+    const sql = input.value.trim();
+    if (!sql) return;
+
+    if (!/^select\b/i.test(sql)) {
+        const proceed = window.confirm(
+            'This query does not start with SELECT and may modify or delete data.\n\n' +
+            'Are you sure you want to execute it?'
+        );
+        if (!proceed) return;
+    }
+
+    const btn = document.getElementById('executeSqlBtn');
+    const loading = document.getElementById('sqlLoading');
+    const errorEl = document.getElementById('sqlError');
+    const emptyEl = document.getElementById('sqlEmpty');
+    const resultWrap = document.getElementById('sqlResultWrap');
+    const rowCountEl = document.getElementById('sqlRowCount');
+
+    btn.disabled = true;
+    loading.hidden = false;
+    errorEl.hidden = true;
+    emptyEl.hidden = true;
+    resultWrap.hidden = true;
+    rowCountEl.textContent = '';
+
+    const res = await HearthAPI.dbQuery(sql);
+
+    btn.disabled = false;
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Query failed. Please check the syntax and try again.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    renderSqlResult(res.result);
+}
+
+function renderSqlResult(rows) {
+    const emptyEl = document.getElementById('sqlEmpty');
+    const resultWrap = document.getElementById('sqlResultWrap');
+    const rowCountEl = document.getElementById('sqlRowCount');
+    const head = document.getElementById('sqlResultHead');
+    const body = document.getElementById('sqlResultBody');
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+        emptyEl.hidden = false;
+        resultWrap.hidden = true;
+        return;
+    }
+
+    // The backend's first row is always the column header, not data.
+    const [headerRow, ...dataRows] = rows;
+    const headerCells = Array.isArray(headerRow) ? headerRow : [headerRow];
+
+    head.innerHTML = headerCells.map(cell => `<th>${escapeAdminHtml(formatSqlCell(cell))}</th>`).join('');
+
+    if (dataRows.length === 0) {
+        emptyEl.hidden = false;
+        resultWrap.hidden = true;
+        return;
+    }
+
+    body.innerHTML = dataRows.map(row => {
+        const cells = Array.isArray(row) ? row : [row];
+        return '<tr>' + cells.map(cell => `<td>${escapeAdminHtml(formatSqlCell(cell))}</td>`).join('') + '</tr>';
+    }).join('');
+
+    rowCountEl.textContent = `${dataRows.length} row${dataRows.length === 1 ? '' : 's'}`;
+    resultWrap.hidden = false;
+}
+
+function formatSqlCell(value) {
+    if (value === null || value === undefined) return 'NULL';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+}
+
+/* ---- Professional Calendar -----------------------------------------------
+   Section 1 (generate): POST /admin/availabilities/calendar - fire-and-forget,
+   hearth-app does the actual generation async off its event bus and just
+   replies 202 Accepted immediately (see AvailabilityMgmtHandler.generate()).
+   There is no result to render here, only a confirmation.
+
+   Section 2 (search): category -> sub-category -> service is mandatory (the
+   search can't run without a serviceId); date is mandatory; start/end time
+   and the state -> city -> pincode/locality combo are optional narrowing
+   filters. GET /admin/availabilities/professionals returns bare
+   {professionalId, date, startTime, endTime, ...} rows - no professional
+   name is included from the backend as of this writing (see the fullName
+   field check in renderProfCalendarResults, which quietly falls back to the
+   raw id if a future backend change adds a name field under a different key
+   than expected). ========================================================= */
+
+const profCalendarState = {
+    categories: [],           // top-level categories, each with subCategories[]
+    selectedCategory: null,
+    selectedSubCategory: null
+};
+
+function initProfCalendar() {
+    document.getElementById('pcGenerateBtn').addEventListener('click', generateProfCalendar);
+    document.getElementById('pcSearchBtn').addEventListener('click', searchProfCalendar);
+
+    document.getElementById('pcCategorySelect').addEventListener('change', onProfCalendarCategoryChange);
+    document.getElementById('pcSubCategorySelect').addEventListener('change', onProfCalendarSubCategoryChange);
+    document.getElementById('pcServiceSelect').addEventListener('change', updateProfCalendarQueryPreview);
+
+    document.getElementById('pcProvinceSelect').addEventListener('change', onProfCalendarProvinceChange);
+    document.getElementById('pcCitySelect').addEventListener('change', onProfCalendarCityChange);
+    document.getElementById('pcNeighbourhoodSelect').addEventListener('change', updateProfCalendarQueryPreview);
+
+    document.getElementById('pcDateInput').addEventListener('input', updateProfCalendarQueryPreview);
+
+    // Business hours: whole-hour slots only, 09:00 through 17:00 (see
+    // populateHourSelect) - the search only ever narrows by the hour, never
+    // by minute, matching how hearth-app's own availability slots are cut.
+    populateHourSelect('pcStartInput');
+    populateHourSelect('pcEndInput');
+    document.getElementById('pcStartInput').addEventListener('change', updateProfCalendarQueryPreview);
+    document.getElementById('pcEndInput').addEventListener('change', updateProfCalendarQueryPreview);
+
+    updateProfCalendarQueryPreview();
+}
+
+const PROF_CALENDAR_START_HOUR = 9;
+const PROF_CALENDAR_END_HOUR = 17;
+
+function populateHourSelect(selectId) {
+    const select = document.getElementById(selectId);
+    const options = ['<option value="">Any time</option>'];
+
+    for (let hour = PROF_CALENDAR_START_HOUR; hour <= PROF_CALENDAR_END_HOUR; hour ++) {
+        const hh = String(hour).padStart(2, '0');
+        options.push(`<option value="${hh}:00">${hh}:00</option>`);
+    }
+    select.innerHTML = options.join('');
+}
+
+/**
+ * Live preview of the exact query string GET /admin/availabilities/professionals
+ * will be called with, built from the current form values - same param
+ * selection logic as searchProfCalendar() itself, kept in sync so the preview
+ * never shows something the actual request wouldn't send.
+ */
+function updateProfCalendarQueryPreview() {
+    const preview = document.getElementById('pcQueryPreview');
+    if (!preview) return;
+
+    const params = {
+        serviceId: document.getElementById('pcServiceSelect').value || undefined,
+        date: document.getElementById('pcDateInput').value || undefined,
+        provinceId: document.getElementById('pcProvinceSelect').value || undefined,
+        cityId: document.getElementById('pcCitySelect').value || undefined,
+        start: document.getElementById('pcStartInput').value || undefined,
+        end: document.getElementById('pcEndInput').value || undefined,
+        neighbourhoodId: document.getElementById('pcNeighbourhoodSelect').value || undefined
+    };
+
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== '') {
+            searchParams.append(key, value);
+        }
+    });
+
+    const queryString = searchParams.toString();
+    preview.textContent = 'GET /admin/availabilities/professionals'
+        + (queryString ? `?${queryString}` : '');
+}
+
+async function loadProfCalendarCategories() {
+    const [catRes, provRes] = await Promise.all([
+        HearthAPI.viewCategories(),
+        HearthAPI.viewProvinces()
+    ]);
+
+    if (catRes.success) {
+        profCalendarState.categories = itemsOf(catRes.result).filter(c => !c.parentId);
+        populateSelect('pcCategorySelect', profCalendarState.categories, 'categoryId', 'name', 'Select a category…');
+    }
+    if (provRes.success) {
+        populateSelect('pcProvinceSelect', itemsOf(provRes.result), 'provinceId', 'provinceName', 'Select a state…');
+    }
+}
+
+function populateSelect(selectId, items, valueField, labelField, placeholder) {
+    const select = document.getElementById(selectId);
+    const options = [`<option value="">${escapeAdminHtml(placeholder)}</option>`]
+        .concat(items.map(item =>
+            `<option value="${escapeAdminHtml(item[valueField])}">${escapeAdminHtml(item[labelField])}</option>`
+        ));
+    select.innerHTML = options.join('');
+}
+
+function onProfCalendarCategoryChange(e) {
+    const categoryId = e.target.value;
+    profCalendarState.selectedCategory = profCalendarState.categories.find(c => String(c.categoryId) === categoryId) || null;
+    profCalendarState.selectedSubCategory = null;
+
+    const subSelect = document.getElementById('pcSubCategorySelect');
+    const serviceSelect = document.getElementById('pcServiceSelect');
+
+    if (!profCalendarState.selectedCategory) {
+        subSelect.disabled = true;
+        subSelect.innerHTML = '<option value="">Select a category first…</option>';
+        serviceSelect.disabled = true;
+        serviceSelect.innerHTML = '<option value="">Select a sub-category first…</option>';
+        updateProfCalendarQueryPreview();
+        return;
+    }
+
+    const subCategories = profCalendarState.selectedCategory.subCategories || [];
+    populateSelect('pcSubCategorySelect', subCategories, 'categoryId', 'name', 'Select a sub-category…');
+    subSelect.disabled = subCategories.length === 0;
+
+    serviceSelect.disabled = true;
+    serviceSelect.innerHTML = '<option value="">Select a sub-category first…</option>';
+    updateProfCalendarQueryPreview();
+}
+
+function onProfCalendarSubCategoryChange(e) {
+    const subCategoryId = e.target.value;
+    const subCategories = (profCalendarState.selectedCategory && profCalendarState.selectedCategory.subCategories) || [];
+    profCalendarState.selectedSubCategory = subCategories.find(sc => String(sc.categoryId) === subCategoryId) || null;
+
+    const serviceSelect = document.getElementById('pcServiceSelect');
+
+    if (!profCalendarState.selectedSubCategory) {
+        serviceSelect.disabled = true;
+        serviceSelect.innerHTML = '<option value="">Select a sub-category first…</option>';
+        updateProfCalendarQueryPreview();
+        return;
+    }
+
+    const services = profCalendarState.selectedSubCategory.services || [];
+    populateSelect('pcServiceSelect', services, 'serviceId', 'name', 'Select a service…');
+    serviceSelect.disabled = services.length === 0;
+    updateProfCalendarQueryPreview();
+}
+
+async function onProfCalendarProvinceChange(e) {
+    const provinceId = e.target.value;
+    const citySelect = document.getElementById('pcCitySelect');
+    const nbhoodSelect = document.getElementById('pcNeighbourhoodSelect');
+
+    citySelect.disabled = true;
+    citySelect.innerHTML = '<option value="">Select a state first…</option>';
+    nbhoodSelect.disabled = true;
+    nbhoodSelect.innerHTML = '<option value="">Select a city first…</option>';
+
+    if (!provinceId) {
+        updateProfCalendarQueryPreview();
+        return;
+    }
+
+    const res = await HearthAPI.viewCities('provinceId', provinceId);
+    if (res.success) {
+        const cities = itemsOf(res.result);
+        populateSelect('pcCitySelect', cities, 'cityId', 'cityName', 'Select a city…');
+        citySelect.disabled = cities.length === 0;
+    }
+    updateProfCalendarQueryPreview();
+}
+
+async function onProfCalendarCityChange(e) {
+    const cityId = e.target.value;
+    const nbhoodSelect = document.getElementById('pcNeighbourhoodSelect');
+
+    nbhoodSelect.disabled = true;
+    nbhoodSelect.innerHTML = '<option value="">Select a city first…</option>';
+
+    if (!cityId) {
+        updateProfCalendarQueryPreview();
+        return;
+    }
+
+    const res = await HearthAPI.viewNeighbourhoods(cityId);
+    if (res.success) {
+        const neighbourhoods = itemsOf(res.result);
+        populateNeighbourhoodSelectByZone(neighbourhoods);
+        nbhoodSelect.disabled = neighbourhoods.length === 0;
+    }
+    updateProfCalendarQueryPreview();
+}
+
+/**
+ * Populates pcNeighbourhoodSelect as one combined "pincode + locality" picker,
+ * grouped into <optgroup> blocks by each neighbourhood's zone (see
+ * Neighbourhood.java: every row already carries pincode/locality/zone - this
+ * is one field standing in for what used to be a separate pincode textbox
+ * and a plain locality dropdown). Selecting an option sends its
+ * neighbourhoodId as-is to the backend via the existing neighbourhoodId
+ * query param.
+ */
+function populateNeighbourhoodSelectByZone(neighbourhoods) {
+    const select = document.getElementById('pcNeighbourhoodSelect');
+
+    const byZone = new Map();
+    neighbourhoods.forEach(n => {
+        const zone = n.zone || 'Other';
+        if (!byZone.has(zone)) {
+            byZone.set(zone, []);
+        }
+        byZone.get(zone).push(n);
+    });
+
+    const zoneGroups = Array.from(byZone.keys()).sort().map(zone => {
+        const options = byZone.get(zone).map(n =>
+            `<option value="${escapeAdminHtml(n.neighbourhoodId)}">${escapeAdminHtml(n.pincode)} – ${escapeAdminHtml(n.locality)}</option>`
+        ).join('');
+        return `<optgroup label="${escapeAdminHtml(zone)}">${options}</optgroup>`;
+    });
+
+    select.innerHTML = '<option value="">Any pincode / locality</option>' + zoneGroups.join('');
+}
+
+async function generateProfCalendar() {
+    const btn = document.getElementById('pcGenerateBtn');
+    const loading = document.getElementById('pcGenLoading');
+    const errorEl = document.getElementById('pcGenError');
+    const successEl = document.getElementById('pcGenSuccess');
+
+    const numberOfDaysRaw = document.getElementById('pcGenNumberOfDays').value.trim();
+    const professionalIdsRaw = document.getElementById('pcGenProfessionalIds').value.trim();
+
+    const payload = {};
+    if (numberOfDaysRaw) {
+        payload.numberOfDays = Number(numberOfDaysRaw);
+    }
+    if (professionalIdsRaw) {
+        payload.professionalIds = professionalIdsRaw.split(',')
+            .map(s => s.trim())
+            .filter(s => s.length > 0)
+            .map(Number);
+    }
+
+    btn.disabled = true;
+    loading.hidden = false;
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    const res = await HearthAPI.generateAvailabilityCalendar(payload);
+
+    btn.disabled = false;
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Could not submit the calendar generation request.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    successEl.textContent = (res.result && res.result.message)
+        || 'Calendar generation request accepted. This runs in the background and may take a minute.';
+    successEl.hidden = false;
+}
+
+async function searchProfCalendar() {
+    const serviceId = document.getElementById('pcServiceSelect').value;
+    const date = document.getElementById('pcDateInput').value;
+    const provinceId = document.getElementById('pcProvinceSelect').value;
+    const cityId = document.getElementById('pcCitySelect').value;
+
+    const errorEl = document.getElementById('pcSearchError');
+    const emptyEl = document.getElementById('pcSearchEmpty');
+    const resultWrap = document.getElementById('pcResultWrap');
+    const rowCountEl = document.getElementById('pcRowCount');
+    const loading = document.getElementById('pcSearchLoading');
+    const btn = document.getElementById('pcSearchBtn');
+
+    errorEl.hidden = true;
+    emptyEl.hidden = true;
+    resultWrap.hidden = true;
+    rowCountEl.textContent = '';
+
+    if (!serviceId) {
+        errorEl.textContent = 'Please select a category, sub-category, and service.';
+        errorEl.hidden = false;
+        return;
+    }
+    if (!date) {
+        errorEl.textContent = 'Please select a date.';
+        errorEl.hidden = false;
+        return;
+    }
+    if (!provinceId) {
+        errorEl.textContent = 'Please select a state.';
+        errorEl.hidden = false;
+        return;
+    }
+    if (!cityId) {
+        errorEl.textContent = 'Please select a city.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    // ASSUMPTION: provinceId/cityId are sent even though
+    // AvailabilityMgmtBO.viewProfessionalAvailability() (as of this writing)
+    // only reads serviceId/neighbourhoodId/date/start/end - it does not
+    // currently filter by province or city at all. Sending them now so this
+    // keeps working once the backend adds support, rather than needing a
+    // second frontend change later; harmless no-ops server-side until then.
+    const params = {
+        serviceId,
+        date,
+        provinceId,
+        cityId,
+        start: document.getElementById('pcStartInput').value || undefined,
+        end: document.getElementById('pcEndInput').value || undefined,
+        neighbourhoodId: document.getElementById('pcNeighbourhoodSelect').value || undefined
+    };
+
+    btn.disabled = true;
+    loading.hidden = false;
+
+    const res = await HearthAPI.viewProfessionalAvailability(params);
+
+    btn.disabled = false;
+    loading.hidden = true;
+
+    if (!res.success) {
+        errorEl.textContent = res.message || 'Could not fetch availability. Please try again.';
+        errorEl.hidden = false;
+        return;
+    }
+
+    renderProfCalendarResults(itemsOf(res.result));
+}
+
+function renderProfCalendarResults(items) {
+    const emptyEl = document.getElementById('pcSearchEmpty');
+    const resultWrap = document.getElementById('pcResultWrap');
+    const rowCountEl = document.getElementById('pcRowCount');
+    const body = document.getElementById('pcResultBody');
+
+    if (!items || items.length === 0) {
+        emptyEl.hidden = false;
+        resultWrap.hidden = true;
+        return;
+    }
+
+    body.innerHTML = items.map(item => {
+        const day = formatAdminDate(item.date) || item.date || '—';
+        const slot = formatTimeSlot(item.startTime, item.endTime);
+        // ASSUMPTION: the backend does not return a professional name today
+        // (only professionalId) - this reads a couple of likely field names
+        // defensively so the table shows a real name the moment the backend
+        // adds one, without a further frontend change. Falls back to a
+        // labeled id if none of them are present.
+        const professional = item.professionalName || item.fullName
+                || (item.professional && item.professional.fullName)
+                || `Professional #${item.professionalId}`;
+
+        return `
+      <tr>
+        <td>${escapeAdminHtml(day)}</td>
+        <td>${escapeAdminHtml(slot)}</td>
+        <td>${escapeAdminHtml(professional)}</td>
+      </tr>
+    `;
+    }).join('');
+
+    rowCountEl.textContent = `${items.length} slot${items.length === 1 ? '' : 's'}`;
+    resultWrap.hidden = false;
+}
+
+function formatTimeSlot(start, end) {
+    const s = formatAdminTime(start);
+    const e = formatAdminTime(end);
+    if (!s && !e) return '—';
+    return `${s || '?'} - ${e || '?'}`;
+}
+
+function formatAdminTime(value) {
+    if (!value) return '';
+    // Accepts "HH:MM:SS" or "HH:MM" (java.sql.Time's default JSON form) and
+    // trims to "HH:MM" for display.
+    const match = String(value).match(/^(\d{2}):(\d{2})/);
+    return match ? `${match[1]}:${match[2]}` : String(value);
 }
 
 /* ---- shared helpers ------------------------------------------------------ */

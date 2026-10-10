@@ -4213,6 +4213,38 @@ input:focus-visible {
     box-shadow: none;
 }
 
+/* ---- Execute SQL ---- */
+.admin-sql-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin: var(--space-sm) 0 var(--space-md);
+}
+.admin-sql-rowcount {
+    font-size: 0.82rem;
+    color: var(--color-espresso);
+    opacity: 0.7;
+}
+/* Query results' first row is the backend's own column header (see
+   renderSqlResult) - bolded and shaded to stand out from the data rows,
+   scoped to this table only so the other admin tables keep their own look. */
+#sqlResultWrap .admin-table th {
+    font-weight: 700;
+    background: var(--color-cream-dim);
+}
+
+/* ---- Professional Calendar: multi-field form rows (category/location cascades) ---- */
+.admin-form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+}
+.admin-form-row .form-field {
+    flex: 1 1 200px;
+    min-width: 180px;
+}
+
 /* ---- data table ---- */
 .admin-table-wrap {
     background: var(--color-white);

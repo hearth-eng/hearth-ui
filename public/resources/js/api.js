@@ -592,6 +592,95 @@ const HearthAPI = (function () {
         }
     }
 
+    /**
+     * POST /admin/dbQuery — admin-only. Runs a raw SQL statement and returns
+     * the result as a bare array of row-arrays (no column names - see
+     * DBQueryHandler on the backend). `sql` is the query text as a string.
+     * @returns {Promise<{success: boolean, message?: string, result?: Array}>}
+     */
+    async function dbQuery(sql) {
+        try {
+            const res = await fetch(BASE_URL + '/admin/dbQuery', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({sql})
+            });
+            let json = await res.json();
+
+            if (res.status === 200) {
+                return {success: true, result: json};
+            } else {
+                return {success: false, message: json.message};
+            }
+        } catch (e) {
+            console.error('[Hearth] Failed to execute db query:', e);
+            return {success: false, message: e.message};
+        }
+    }
+
+    /**
+     * POST /admin/availabilities/calendar — admin-only. Triggers hearth-app's
+     * async calendar generation job. `numberOfDays` and `professionalIds` are
+     * both optional (numberOfDays defaults to 5 server-side) - pass {} to
+     * accept all server defaults.
+     * @returns {Promise<{success: boolean, message?: string, result?: Object}>}
+     */
+    async function generateAvailabilityCalendar(payload) {
+        try {
+            const res = await fetch(BASE_URL + '/admin/availabilities/calendar', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload || {})
+            });
+            let json = await res.json();
+
+            if (res.status === 200 || res.status === 202) {
+                return {success: true, result: json};
+            } else {
+                return {success: false, message: json.message};
+            }
+        } catch (e) {
+            console.error('[Hearth] Failed to request calendar generation:', e);
+            return {success: false, message: e.message};
+        }
+    }
+
+    /**
+     * GET /admin/availabilities/professionals — admin-only. `params` is an
+     * object forwarded as the query string as-is, e.g. { serviceId, date,
+     * start, end, neighbourhoodId } - whatever the backend actually supports;
+     * only non-empty values are included.
+     * @returns {Promise<{success: boolean, message?: string, result?: Object}>}
+     */
+    async function viewProfessionalAvailability(params) {
+        const searchParams = new URLSearchParams();
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, value);
+            }
+        });
+
+        try {
+            const res = await fetch(BASE_URL + '/admin/availabilities/professionals?' + searchParams.toString(), {
+                method: 'GET',
+                credentials: 'include',
+                headers: {'Content-Type': 'application/json'}
+            });
+            let json = await res.json();
+
+            if (res.status === 200) {
+                return {success: true, result: json};
+            } else {
+                return {success: false, message: json.message};
+            }
+        } catch (e) {
+            console.error('[Hearth] Failed to fetch professional availability:', e);
+            return {success: false, message: e.message};
+        }
+    }
+
     async function queryApplication(status) {
         try {
             const param = '?' + status;
@@ -719,6 +808,9 @@ const HearthAPI = (function () {
         viewVouchers,
         adminLogin,
         query,
+        dbQuery,
+        generateAvailabilityCalendar,
+        viewProfessionalAvailability,
         queryApplication,
         queryBooking,
         queryCustomer,
