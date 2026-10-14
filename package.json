@@ -12,6 +12,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.1151.0",
     "axios": "^1.20.0",
     "cookie-parser": "^1.4.7",
     "crypto": "^1.0.1",
