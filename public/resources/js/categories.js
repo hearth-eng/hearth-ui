@@ -486,13 +486,13 @@ function initCategoriesPage() {
             return;
 
         if (isLoggedIn() && getCurrentUser()) {
-            window.location.href = 'checkout.html';
+            window.location.href = 'checkout';
             return;
         }
 
         // Not signed in yet: capture where to land after signup completes,
         // then open the same signup flow used everywhere else on the site.
-        safeStorageSet(HEARTH_STORAGE_KEYS.postSignupRedirect, 'checkout.html');
+        safeStorageSet(HEARTH_STORAGE_KEYS.postSignupRedirect, 'checkout');
         const signupBtn = document.getElementById('signupBtn');
         if (signupBtn)
             signupBtn.click();

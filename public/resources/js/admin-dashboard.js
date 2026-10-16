@@ -118,7 +118,7 @@ function initAdminLogout() {
     document.getElementById('adminLogoutBtn')?.addEventListener('click', async () => {
         await HearthAPI.logout(); // clears the shared _fks cookie server-side
         clearAdminSession();
-        window.location.replace('admin-login.html');
+        window.location.replace('admin-login');
     });
 }
 

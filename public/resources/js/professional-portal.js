@@ -220,7 +220,7 @@
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 22s7-7.4 7-12.5A7 7 0 0 0 5 9.5C5 14.6 12 22 12 22Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="9.5" r="2.5" stroke="currentColor" stroke-width="2"/></svg>
           </span>
           <p>You haven't added an address yet.</p>
-          <a href="profile.html" class="btn btn-primary btn-ripple">Add an Address</a>
+          <a href="profile" class="btn btn-primary btn-ripple">Add an Address</a>
         </div>`;
             return;
         }

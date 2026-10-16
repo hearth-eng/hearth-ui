@@ -30,7 +30,7 @@
 (function () {
     'use strict';
 
-    const PORTAL_PAGE = 'professional-portal.html';
+    const PORTAL_PAGE = 'professional-portal';
     const REDIRECT_DELAY_MS = 1200;
     const RESEND_SECONDS = 30;
 

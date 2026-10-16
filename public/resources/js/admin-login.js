@@ -12,7 +12,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Already signed in on this browser — skip straight to the dashboard.
     if (adminIsLoggedIn()) {
-        window.location.replace('admin-dashboard.html');
+        window.location.replace('admin-dashboard');
         return;
     }
 
@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (res.success) {
             saveAdminSession(res.result);
-            window.location.replace('admin-dashboard.html');
+            window.location.replace('admin-dashboard');
             return;
         }
 

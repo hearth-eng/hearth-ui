@@ -28,27 +28,30 @@
  *  matching the original hand-written markup, where that link was always
  *  a plain call-to-action rather than a "you are here" indicator. */
 const SITE_NAV_LINKS = [
-    {file: 'index.html', label: 'Home'},
-    {file: 'categories.html', label: 'Categories', hiddenOn: ['professional-portal.html']},
-    {file: 'about.html', label: 'About Us'},
-    {file: 'contact.html', label: 'Contact Us'},
-    {file: 'faq.html', label: 'FAQs'},
-    {file: null, href: 'professional-onboarding.html', label: 'Become a Professional', extraClass: 'nav-link-pro', hiddenOn: ['professional-portal.html']}
+    {file: 'index', label: 'Home'},
+    {file: 'categories', label: 'Categories', hiddenOn: ['professional-portal']},
+    {file: 'about', label: 'About Us'},
+    {file: 'contact', label: 'Contact Us'},
+    {file: 'faq', label: 'FAQs'},
+    {file: null, href: 'professional-onboarding', label: 'Become a Professional', extraClass: 'nav-link-pro', hiddenOn: ['professional-portal']}
 ];
 
+/** Returns the current page's key with no ".html" and no leading/trailing
+ *  slashes, e.g. "categories" for both /categories.html and /categories -
+ *  so active-link/chrome detection works the same regardless of which form
+ *  a given link on the site (old or already-clean) sent the user through. */
 function currentPageFile() {
     const last = window.location.pathname.split('/').pop();
-    return last ? last : 'index.html';
+    return (last ? last : 'index').replace(/\.html$/, '');
 }
 
 /** Professional-facing pages get a stripped-down chrome: just the brand
  *  (not a link) and the account chip — no site nav links, no Log In /
- *  Sign Up (those are the customer flows), and no footer. Matched without
- *  ".html" so clean URLs (/professional-portal) match too. */
+ *  Sign Up (those are the customer flows), and no footer. */
 const PROFESSIONAL_CHROME_PAGES = ['professional-onboarding', 'professional-portal'];
 
 function isProfessionalChromePage() {
-    return PROFESSIONAL_CHROME_PAGES.includes(currentPageFile().replace(/\.html$/, ''));
+    return PROFESSIONAL_CHROME_PAGES.includes(currentPageFile());
 }
 
 function renderProfessionalHeader() {
@@ -77,19 +80,17 @@ function renderSiteHeader() {
     if (isProfessionalChromePage())
         return renderProfessionalHeader();
     const page = currentPageFile();
-    const isHome = page === 'index.html';
-    const homeHref = isHome ? '#top' : 'index.html#top';
+    const isHome = page === 'index';
+    const homeHref = isHome ? '#top' : 'index#top';
 
     // `hiddenOn` lists pages where a link shouldn't appear at all (e.g. the
     // professional portal has no use for customer browsing / onboarding links).
-    // Compared without ".html" so clean URLs (/professional-portal) match too.
-    const pageKey = page.replace(/\.html$/, '');
     const linksHtml = SITE_NAV_LINKS
-            .filter(link => !(link.hiddenOn || []).some(p => p.replace(/\.html$/, '') === pageKey))
+            .filter(link => !(link.hiddenOn || []).includes(page))
             .map(link => {
         const isActive = !!link.file && link.file === page;
         const cls = ['nav-link', link.extraClass, isActive ? 'is-active' : ''].filter(Boolean).join(' ');
-        const href = link.file === 'index.html' ? homeHref : (link.href || link.file);
+        const href = link.file === 'index' ? homeHref : (link.href || link.file);
         return `      <li><a href="${href}" class="${cls}">${link.label}</a></li>`;
     }).join('\n');
 
@@ -137,8 +138,8 @@ ${linksHtml}
  *  this shared template resolves that drift to the real, working hrefs. */
 function renderSiteFooter() {
     const page = currentPageFile();
-    const isHome = page === 'index.html';
-    const homeHref = isHome ? '#top' : 'index.html#top';
+    const isHome = page === 'index';
+    const homeHref = isHome ? '#top' : 'index#top';
     const footerIdAttr = isHome ? ' id="contact"' : '';
 
     return `<footer class="site-footer"${footerIdAttr}>
@@ -174,7 +175,7 @@ function renderSiteFooter() {
     <nav class="footer-col" aria-label="Services">
       <h4>Services</h4>
       <ul>
-        <li><a href="categoriesl#cleaning-pest-control">Home Cleaning</a></li>
+        <li><a href="categories#cleaning-pest-control">Home Cleaning</a></li>
         <li><a href="categories#salon-makeup">Salon at Home</a></li>
         <li><a href="categories#appliance-repair">AC Repair</a></li>
         <li><a href="categories#electrician-plumbing-carpentry">Electrician</a></li>

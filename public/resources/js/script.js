@@ -270,7 +270,7 @@ function initSearchForm() {
  * A logged-in customer is asked to confirm a logout first.
  */
 function initProfessionalLinkGate() {
-    const ONBOARDING_PAGE = 'professional-onboarding.html';
+    const ONBOARDING_PAGE = 'professional-onboarding';
 
     document.addEventListener('click', async (e) => {
         const trigger = e.target.closest('.nav-link-pro');
@@ -742,7 +742,7 @@ function initSignupFlow() {
         goToWaiting('Setting up your profile…', 'forward');
         const redirectTo = safeStorageGet(HEARTH_STORAGE_KEYS.postSignupRedirect);
         let role = 'CUSTOMER';
-        if (redirectTo && redirectTo === 'become-professional.html') {
+        if (redirectTo && redirectTo === 'become-professional') {
             role = 'PROFESSIONAL';
         }
 
@@ -1656,16 +1656,16 @@ function renderUserChip(user) {
         // is just "My Dashboard" (the left-nav professional portal, which
         // itself covers profile, bookings, etc.) plus "Log out" below.
         const accountMenuLinks = isProfessional ? `
-          <a href="professional-portal.html" role="menuitem" class="user-dropdown-item">
+          <a href="professional-portal" role="menuitem" class="user-dropdown-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="9" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="5" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="14" y="12" width="7" height="9" rx="1.5" stroke="currentColor" stroke-width="2"/><rect x="3" y="16" width="7" height="5" rx="1.5" stroke="currentColor" stroke-width="2"/></svg>
             My Dashboard
           </a>
         ` : `
-          <a href="profile.html" role="menuitem" class="user-dropdown-item">
+          <a href="profile" role="menuitem" class="user-dropdown-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             View Profile
           </a>
-          <a href="bookings.html" role="menuitem" class="user-dropdown-item">
+          <a href="bookings" role="menuitem" class="user-dropdown-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             My Bookings
           </a>

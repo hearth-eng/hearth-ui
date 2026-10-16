@@ -63,7 +63,7 @@ function renderFavouriteProfessionals() {
       </div>
       <div class="pro-footer">
         <span class="pro-price">${escapeHtmlF(pro.price)} <small>onward</small></span>
-        <a href="index.html#top" class="btn btn-primary btn-sm btn-ripple">Book Now</a>
+        <a href="index#top" class="btn btn-primary btn-sm btn-ripple">Book Now</a>
       </div>
     </article>
   `).join('');
