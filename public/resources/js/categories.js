@@ -24,6 +24,33 @@ function serviceImage(sku, subCategory) {
     return subCategory ? subCategory.image : '';
 }
 
+/* ---- "sign in to continue" prompt ------------------------------------
+ Browsing categories/services needs no account, but acting on one (adding
+ to cart) does. Rather than popping a modal unasked, this shows a brief
+ toast and visually points at the header's own Log In / Sign Up buttons,
+ so the user drives which flow they want. */
+function promptLoginToContinue(message) {
+    const navActions = document.getElementById('navActions');
+    if (navActions) {
+        navActions.classList.remove('nav-actions-pulse');
+        void navActions.offsetWidth; // restart the animation if already running
+        navActions.classList.add('nav-actions-pulse');
+        setTimeout(() => navActions.classList.remove('nav-actions-pulse'), 1600);
+    }
+
+    let toast = document.getElementById('authPromptToast');
+    if (! toast) {
+        toast = document.createElement('div');
+        toast.id = 'authPromptToast';
+        toast.className = 'auth-prompt-toast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add('is-visible');
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => toast.classList.remove('is-visible'), 3500);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // if (typeof CATEGORY_DATA === 'undefined') {
     //     return; // guard: only runs on categories.html
@@ -345,7 +372,11 @@ function initCategoriesPage() {
                 });
             }
 
-            addBtn.addEventListener('click', () => {
+            addBtn.addEventListener('click', async () => {
+                if (typeof isLoggedIn === 'function' && (! await isLoggedIn() || ! getCurrentUser())) {
+                    promptLoginToContinue('You have to log in or sign up to opt for a service.');
+                    return;
+                }
                 openSchedulePicker(sku.serviceId, sku.name, null, (schedule) => {
                     addToCart(sku, category, subCategory, schedule);
                     renderGrid();
