@@ -34,12 +34,17 @@ async function requestOtp(req, res) {
             res.status(200)
                 .set('Accept', 'application/json')
                 .cookie(CookieUtil.STD_COOKIE, token, cookieOpts)
-                .send({message: 'Otp sent successfully'});
+                .json({message: 'Otp sent successfully'});
         }
         else {
             // res.status = 0
             // Otp has already been generated and sent
+            let token = JwtUtil.otpToken(input, ret.otp.jti);
+            let cookieOpts = CookieUtil.prepare(ret.otp.ttlMin);
+            
             res.status(200)
+                .set('Accept', 'application/json')
+                .cookie(CookieUtil.STD_COOKIE, token, cookieOpts)
                 .json({message: 'Otp has already been sent. Please wait for 5 minute before trying again'});
         }
     }

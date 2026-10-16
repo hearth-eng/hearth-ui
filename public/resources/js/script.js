@@ -420,8 +420,16 @@ function initSignupFlow() {
         setStepDots(1);
 
         document.getElementById('signupMobile').value = '';
+        document.getElementById('signupEmailIdentity').value = '';
         document.getElementById('signupName').value = '';
         document.getElementById('signupEmail').value = '';
+        document.getElementById('signupMobileProfile').value = '';
+        state.identityMode = 'mobile';
+        document.getElementById('signupMobileField').hidden = false;
+        document.getElementById('signupEmailField').hidden = true;
+        document.getElementById('signupIdentitySub').textContent =
+            'Enter your mobile number and we\'ll send a one-time password to verify it\'s you.';
+        document.getElementById('signupUseEmailBtn').textContent = 'Use email address instead';
         modal.querySelectorAll('.otp-box').forEach(b => {
             b.value = '';
             b.classList.remove('is-filled');
@@ -501,37 +509,69 @@ function initSignupFlow() {
         el.textContent = '';
     }
 
-    // ---- SCREEN 1: mobile number -> waiting -> otp -------------------------
+    // ---- SCREEN 1: mobile/email identity -> waiting -> otp -----------------
     const mobileInput = document.getElementById('signupMobile');
+    const emailIdentityInput = document.getElementById('signupEmailIdentity');
+    const mobileField = document.getElementById('signupMobileField');
+    const emailField = document.getElementById('signupEmailField');
+    const identitySub = document.getElementById('signupIdentitySub');
+    const useEmailBtn = document.getElementById('signupUseEmailBtn');
     const sendOtpBtn = document.getElementById('sendOtpBtn');
+
+    state.identityMode = 'mobile';
 
     mobileInput.addEventListener('input', () => {
         mobileInput.value = mobileInput.value.replace(/\D/g, '').slice(0, 10);
     });
 
+    useEmailBtn.addEventListener('click', () => {
+        const toEmail = state.identityMode === 'mobile';
+        state.identityMode = toEmail ? 'email' : 'mobile';
+        mobileField.hidden = toEmail;
+        emailField.hidden = !toEmail;
+        hideError('mobileError');
+        identitySub.textContent = toEmail
+            ? 'Enter your email address and we\'ll send a one-time password to verify it\'s you.'
+            : 'Enter your mobile number and we\'ll send a one-time password to verify it\'s you.';
+        useEmailBtn.textContent = toEmail ? 'Use mobile number instead' : 'Use email address instead';
+        setTimeout(() => (toEmail ? emailIdentityInput : mobileInput).focus(), 50);
+    });
+
     sendOtpBtn.addEventListener('click', async () => {
         hideError('mobileError');
-        const mobile = mobileInput.value.trim();
 
-        if (!/^[6-9]\d{9}$/.test(mobile)) {
-            showError('mobileError', 'Enter a valid 10-digit mobile number.');
-            mobileInput.focus();
-            return;
+        let identity;
+        if (state.identityMode === 'email') {
+            identity = emailIdentityInput.value.trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity)) {
+                showError('mobileError', 'Enter a valid email address.');
+                emailIdentityInput.focus();
+                return;
+            }
+        }
+        else {
+            identity = mobileInput.value.trim();
+            if (!/^[6-9]\d{9}$/.test(identity)) {
+                showError('mobileError', 'Enter a valid 10-digit mobile number.');
+                mobileInput.focus();
+                return;
+            }
         }
 
-        state.mobile = mobile;
+        state.mobile = identity;
         goToWaiting('Sending your OTP…', 'forward');
 
         // make the REST API call
-        const result = await HearthAPI.requestOtp('signup', mobile);
-        
+        const result = await HearthAPI.requestOtp('signup', identity);
+
         if (! result.success) {
             goTo(screens.mobile, 'back');
             showError('mobileError', result.message || 'Could not send OTP. Please try again.');
             return;
         }
-        
-        document.getElementById('otpMobileDisplay').textContent = `+91 ${mobile}`;
+
+        document.getElementById('otpMobileDisplay').textContent =
+            state.identityMode === 'email' ? identity : `+91 ${identity}`;
         const hint = document.getElementById('otpDemoHint');
         if (hint) {
             if (result.demoOtp) {
@@ -647,6 +687,9 @@ function initSignupFlow() {
         }
         else {  // success = true
             setStepDots(3);
+            // Collect whichever identity wasn't already verified via OTP.
+            emailFormField.hidden = state.identityMode === 'email';
+            mobileFormField.hidden = state.identityMode !== 'email';
             goTo(screens.profile, 'forward');
             setTimeout(() => document.getElementById('signupName')?.focus(), 300);
         }
@@ -655,22 +698,45 @@ function initSignupFlow() {
     // ---- SCREEN 3: profile -> waiting -> success ---------------------------
     const nameInput = document.getElementById('signupName');
     const emailInput = document.getElementById('signupEmail');
+    const emailFormField = document.getElementById('signupEmailFormField');
+    const mobileProfileInput = document.getElementById('signupMobileProfile');
+    const mobileFormField = document.getElementById('signupMobileFormField');
     const completeRegBtn = document.getElementById('completeRegBtn');
+
+    mobileProfileInput.addEventListener('input', () => {
+        mobileProfileInput.value = mobileProfileInput.value.replace(/\D/g, '').slice(0, 10);
+    });
 
     completeRegBtn.addEventListener('click', async () => {
         hideError('profileError');
         const name = nameInput.value.trim();
-        const email = emailInput.value.trim();
 
         if (name.length < 2) {
             showError('profileError', 'Please enter your full name.');
             nameInput.focus();
             return;
         }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            showError('profileError', 'Please enter a valid email address.');
-            emailInput.focus();
-            return;
+
+        // Whichever identity OTP verification used (state.identityMode) is already
+        // known - collect the OTHER one here, not the same one twice.
+        let phone1, email;
+        if (state.identityMode === 'email') {
+            email = state.mobile;
+            phone1 = mobileProfileInput.value.trim();
+            if (!/^[6-9]\d{9}$/.test(phone1)) {
+                showError('profileError', 'Please enter a valid 10-digit mobile number.');
+                mobileProfileInput.focus();
+                return;
+            }
+        }
+        else {
+            phone1 = state.mobile;
+            email = emailInput.value.trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showError('profileError', 'Please enter a valid email address.');
+                emailInput.focus();
+                return;
+            }
         }
 
         goToWaiting('Setting up your profile…', 'forward');
@@ -681,7 +747,7 @@ function initSignupFlow() {
         }
 
         const result = await HearthAPI.createUser({
-            phone1: state.mobile,
+            phone1: phone1,
             fullName: name,
             email: email,
             role: role
@@ -789,6 +855,13 @@ function initLoginFlow() {
         state.activeScreen = screens.mobile;
 
         document.getElementById('loginMobile').value = '';
+        document.getElementById('loginEmailIdentity').value = '';
+        state.identityMode = 'mobile';
+        document.getElementById('loginMobileField').hidden = false;
+        document.getElementById('loginEmailField').hidden = true;
+        document.getElementById('loginIdentitySub').textContent =
+            'Enter your registered mobile number and we\'ll send you a one-time password.';
+        document.getElementById('loginUseEmailBtn').textContent = 'Use email address instead';
         modal.querySelectorAll('.otp-box').forEach(b => {
             b.value = '';
             b.classList.remove('is-filled');
@@ -854,12 +927,32 @@ function initLoginFlow() {
         el.textContent = '';
     }
 
-    // ---- SCREEN 1: mobile number -> waiting -> otp ------------------------
+    // ---- SCREEN 1: mobile/email identity -> waiting -> otp -----------------
     const mobileInput = document.getElementById('loginMobile');
+    const emailIdentityInput = document.getElementById('loginEmailIdentity');
+    const mobileField = document.getElementById('loginMobileField');
+    const emailField = document.getElementById('loginEmailField');
+    const identitySub = document.getElementById('loginIdentitySub');
+    const useEmailBtn = document.getElementById('loginUseEmailBtn');
     const sendOtpBtn = document.getElementById('loginSendOtpBtn');
+
+    state.identityMode = 'mobile';
 
     mobileInput.addEventListener('input', () => {
         mobileInput.value = mobileInput.value.replace(/\D/g, '').slice(0, 10);
+    });
+
+    useEmailBtn.addEventListener('click', () => {
+        const toEmail = state.identityMode === 'mobile';
+        state.identityMode = toEmail ? 'email' : 'mobile';
+        mobileField.hidden = toEmail;
+        emailField.hidden = !toEmail;
+        hideError('loginMobileError');
+        identitySub.textContent = toEmail
+            ? 'Enter your registered email address and we\'ll send you a one-time password.'
+            : 'Enter your registered mobile number and we\'ll send you a one-time password.';
+        useEmailBtn.textContent = toEmail ? 'Use mobile number instead' : 'Use email address instead';
+        setTimeout(() => (toEmail ? emailIdentityInput : mobileInput).focus(), 50);
     });
 
     document.getElementById('switchToSignupBtn')?.addEventListener('click', () => {
@@ -877,26 +970,38 @@ function initLoginFlow() {
 
     sendOtpBtn.addEventListener('click', async () => {
         hideError('loginMobileError');
-        const mobile = mobileInput.value.trim();
 
-        if (!/^[6-9]\d{9}$/.test(mobile)) {
-            showError('loginMobileError', 'Enter a valid 10-digit mobile number.');
-            mobileInput.focus();
-            return;
+        let identity;
+        if (state.identityMode === 'email') {
+            identity = emailIdentityInput.value.trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity)) {
+                showError('loginMobileError', 'Enter a valid email address.');
+                emailIdentityInput.focus();
+                return;
+            }
+        }
+        else {
+            identity = mobileInput.value.trim();
+            if (!/^[6-9]\d{9}$/.test(identity)) {
+                showError('loginMobileError', 'Enter a valid 10-digit mobile number.');
+                mobileInput.focus();
+                return;
+            }
         }
 
-        state.mobile = mobile;
+        state.mobile = identity;
         goToWaiting('Sending your OTP…', 'forward');
 
-        const result = await HearthAPI.requestOtp('login', mobile);
-        
+        const result = await HearthAPI.requestOtp('login', identity);
+
         if (! result.success) {
             goTo(screens.mobile, 'back');
             showError('loginMobileError', result.message || 'Could not send OTP. Please try again.');
             return;
         }
 
-        document.getElementById('loginOtpMobileDisplay').textContent = `+91 ${mobile}`;
+        document.getElementById('loginOtpMobileDisplay').textContent =
+            state.identityMode === 'email' ? identity : `+91 ${identity}`;
         const hint = document.getElementById('loginOtpDemoHint');
         if (hint) {
             if (result.demoOtp) {
@@ -1077,13 +1182,17 @@ function injectLoginModalMarkup() {
 
       <div class="modal-screen screen-current" data-screen="login-mobile">
         <h2 id="loginModalTitle" class="modal-title">Welcome back</h2>
-        <p class="modal-sub">Enter your registered mobile number and we'll send you a one-time password.</p>
-        <div class="otp-mobile-field">
+        <p class="modal-sub" id="loginIdentitySub">Enter your registered mobile number and we'll send you a one-time password.</p>
+        <div class="otp-mobile-field" id="loginMobileField">
           <span class="otp-country-code">+91</span>
           <input type="tel" inputmode="numeric" maxlength="10" id="loginMobile" placeholder="98765 43210" autocomplete="tel">
         </div>
+        <div class="otp-mobile-field" id="loginEmailField" hidden>
+          <input type="email" id="loginEmailIdentity" placeholder="[REDACTED_EMAIL_ADDRESS_11]" autocomplete="email">
+        </div>
         <p class="modal-error" id="loginMobileError" hidden></p>
         <button type="button" class="btn btn-primary btn-ripple modal-submit" id="loginSendOtpBtn">Send OTP</button>
+        <p class="modal-switch"><button type="button" class="link-btn" id="loginUseEmailBtn">Use email address instead</button></p>
         <p class="modal-switch">New to Hearth? <button type="button" class="link-btn" id="switchToSignupBtn">Sign up</button></p>
       </div>
 
@@ -1667,13 +1776,17 @@ function injectSignupModalMarkup() {
 
       <div class="modal-screen screen-current" data-screen="mobile">
         <h2 id="signupModalTitle" class="modal-title">Let's get you started</h2>
-        <p class="modal-sub">Enter your mobile number and we'll send a one-time password to verify it's you.</p>
-        <div class="otp-mobile-field">
+        <p class="modal-sub" id="signupIdentitySub">Enter your mobile number and we'll send a one-time password to verify it's you.</p>
+        <div class="otp-mobile-field" id="signupMobileField">
           <span class="otp-country-code">+91</span>
           <input type="tel" inputmode="numeric" maxlength="10" id="signupMobile" placeholder="98765 43210" autocomplete="tel">
         </div>
+        <div class="otp-mobile-field" id="signupEmailField" hidden>
+          <input type="email" id="signupEmailIdentity" placeholder="[REDACTED_EMAIL_ADDRESS_11]" autocomplete="email">
+        </div>
         <p class="modal-error" id="mobileError" hidden></p>
         <button type="button" class="btn btn-primary btn-ripple modal-submit" id="sendOtpBtn">Send OTP</button>
+        <p class="modal-switch"><button type="button" class="link-btn" id="signupUseEmailBtn">Use email address instead</button></p>
         <p class="modal-switch">Already have an account? <button type="button" class="link-btn" id="switchToLoginBtn">Log in</button></p>
       </div>
 
@@ -1710,9 +1823,13 @@ function injectSignupModalMarkup() {
           <label for="signupName">Full name</label>
           <input type="text" id="signupName" placeholder="Your name" autocomplete="name">
         </div>
-        <div class="form-field">
+        <div class="form-field" id="signupEmailFormField">
           <label for="signupEmail">Email address</label>
           <input type="email" id="signupEmail" placeholder="you@email.com" autocomplete="email">
+        </div>
+        <div class="form-field" id="signupMobileFormField" hidden>
+          <label for="signupMobileProfile">Mobile number</label>
+          <input type="tel" inputmode="numeric" maxlength="10" id="signupMobileProfile" placeholder="98765 43210" autocomplete="tel">
         </div>
         <p class="modal-error" id="profileError" hidden></p>
         <button type="button" class="btn btn-primary btn-ripple modal-submit" id="completeRegBtn">Complete Registration</button>
