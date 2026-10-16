@@ -67,6 +67,10 @@
             // 'login'  -> OTP for an existing account (POST login/otp/*)
             // 'signup' -> OTP to create a new account (POST signup/otp/*)
             mode: 'login',
+            // Which identity the FIRST OTP (the one on po-mobile) was sent to -
+            // 'mobile' or 'email'. The po-account screen collects whichever one
+            // this isn't, same contract as the customer signup flow in script.js.
+            identityMode: 'mobile',
             account: {fullName: '', email: ''},
             activeScreen: screens.mobile,
             resendTimer: null,
@@ -131,7 +135,7 @@
             clearOtpBoxes();
             hideErr('poOtpError');
             goTo(screens.mobile, 'back');
-            setTimeout(() => mobileInput.focus(), 300);
+            setTimeout(() => (state.identityMode === 'email' ? emailIdentityInput : mobileInput).focus(), 300);
         }
 
         document.getElementById('poMessageRetryBtn').addEventListener('click', () => {
@@ -141,8 +145,13 @@
                 fn();
         });
 
-        /* ---- SCREEN: mobile number -> waiting -> otp --------------------- */
+        /* ---- SCREEN: mobile/email identity -> waiting -> otp ------------- */
         const mobileInput = document.getElementById('poMobile');
+        const emailIdentityInput = document.getElementById('poEmailIdentity');
+        const mobileField = document.getElementById('poMobileField');
+        const emailField = document.getElementById('poEmailField');
+        const identitySub = document.getElementById('poIdentitySub');
+        const useEmailBtn = document.getElementById('poUseEmailBtn');
         const sendOtpBtn = document.getElementById('poSendOtpBtn');
 
         mobileInput.addEventListener('input', () => {
@@ -153,22 +162,51 @@
                 sendOtpBtn.click();
             }
         });
+        emailIdentityInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                sendOtpBtn.click();
+            }
+        });
+
+        useEmailBtn.addEventListener('click', () => {
+            const toEmail = state.identityMode === 'mobile';
+            state.identityMode = toEmail ? 'email' : 'mobile';
+            mobileField.hidden = toEmail;
+            emailField.hidden = !toEmail;
+            hideErr('poMobileError');
+            identitySub.textContent = toEmail
+                ? 'We\'ll send a one-time password to verify your email. Already a Hearth professional? This takes you straight to your dashboard.'
+                : 'We\'ll send a one-time password to verify it. Already a Hearth professional? This takes you straight to your dashboard.';
+            useEmailBtn.textContent = toEmail ? 'Use mobile number instead' : 'Use email address instead';
+            setTimeout(() => (toEmail ? emailIdentityInput : mobileInput).focus(), 50);
+        });
 
         sendOtpBtn.addEventListener('click', async () => {
             hideErr('poMobileError');
-            const mobile = mobileInput.value.trim();
 
-            if (!/^[6-9]\d{9}$/.test(mobile)) {
-                showErr('poMobileError', 'Enter a valid 10-digit mobile number.');
-                mobileInput.focus();
-                return;
+            let identity;
+            if (state.identityMode === 'email') {
+                identity = emailIdentityInput.value.trim();
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity)) {
+                    showErr('poMobileError', 'Enter a valid email address.');
+                    emailIdentityInput.focus();
+                    return;
+                }
+            }
+            else {
+                identity = mobileInput.value.trim();
+                if (!/^[6-9]\d{9}$/.test(identity)) {
+                    showErr('poMobileError', 'Enter a valid 10-digit mobile number.');
+                    mobileInput.focus();
+                    return;
+                }
             }
 
-            state.mobile = mobile;
+            state.mobile = identity;
             state.mode = 'login';
             goToWaiting('Sending your OTP…', 'forward');
 
-            const result = await HearthAPI.requestOtp('login', mobile);
+            const result = await HearthAPI.requestOtp('login', identity);
 
             if (!result.success) {
                 goTo(screens.mobile, 'back');
@@ -179,7 +217,8 @@
         });
 
         function openOtpScreen(result) {
-            document.getElementById('poOtpMobileDisplay').textContent = `+91 ${state.mobile}`;
+            document.getElementById('poOtpMobileDisplay').textContent =
+                state.identityMode === 'email' ? state.mobile : `+91 ${state.mobile}`;
             const hint = document.getElementById('poOtpHint');
             if (result && result.demoOtp) {
                 hint.hidden = false;
@@ -281,7 +320,13 @@
 
             if (!result.success) {
                 if (state.mode === 'login' && result.code === 404) {
-                    // Number verified, but no Hearth account behind it.
+                    // Identity verified, but no Hearth account behind it.
+                    // Collect whichever identity wasn't already verified via OTP.
+                    emailFormField.hidden = state.identityMode === 'email';
+                    mobileFormField.hidden = state.identityMode !== 'email';
+                    poAccountSub.textContent = state.identityMode === 'email'
+                        ? 'We verified your email, but there\'s no Hearth account for it yet. Add a couple of details and we\'ll send one more code to confirm it\'s you.'
+                        : 'We verified your number, but there\'s no Hearth account for it yet. Add a couple of details and we\'ll send one more code to confirm it\'s you.';
                     goTo(screens.account, 'forward');
                     setTimeout(() => document.getElementById('poName')?.focus(), 300);
                     return;
@@ -312,26 +357,49 @@
         /* ---- SCREEN: new account details --------------------------------- */
         const nameInput = document.getElementById('poName');
         const emailInput = document.getElementById('poEmail');
+        const emailFormField = document.getElementById('poEmailFormField');
+        const mobileProfileInput = document.getElementById('poMobileProfile');
+        const mobileFormField = document.getElementById('poMobileFormField');
+        const poAccountSub = document.getElementById('poAccountSub');
+
+        mobileProfileInput.addEventListener('input', () => {
+            mobileProfileInput.value = mobileProfileInput.value.replace(/\D/g, '').slice(0, 10);
+        });
 
         document.getElementById('poTryAnotherNumberBtn').addEventListener('click', backToMobile);
 
         document.getElementById('poCreateAccountBtn').addEventListener('click', async () => {
             hideErr('poAccountError');
             const fullName = nameInput.value.trim();
-            const email = emailInput.value.trim();
 
             if (fullName.length < 2) {
                 showErr('poAccountError', 'Please enter your full name.');
                 nameInput.focus();
                 return;
             }
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                showErr('poAccountError', 'Please enter a valid email address.');
-                emailInput.focus();
-                return;
+
+            // Collect whichever identity wasn't already verified via OTP.
+            let email, phone1;
+            if (state.identityMode === 'email') {
+                email = state.mobile;
+                phone1 = mobileProfileInput.value.trim();
+                if (!/^[6-9]\d{9}$/.test(phone1)) {
+                    showErr('poAccountError', 'Please enter a valid 10-digit mobile number.');
+                    mobileProfileInput.focus();
+                    return;
+                }
+            }
+            else {
+                phone1 = state.mobile;
+                email = emailInput.value.trim();
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    showErr('poAccountError', 'Please enter a valid email address.');
+                    emailInput.focus();
+                    return;
+                }
             }
 
-            state.account = {fullName, email};
+            state.account = {fullName, email, phone1};
             state.mode = 'signup';
             goToWaiting('Sending your OTP…', 'forward');
 
@@ -349,7 +417,7 @@
             goToWaiting('Setting up your account…', 'forward');
 
             const result = await HearthAPI.createUser({
-                phone1: state.mobile,
+                phone1: state.account.phone1,
                 fullName: state.account.fullName,
                 email: state.account.email,
                 role: 'PROFESSIONAL'

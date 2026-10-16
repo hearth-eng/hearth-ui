@@ -586,13 +586,17 @@
                             <div class="modal-screen screen-current" data-screen="po-mobile">
                                 <p class="po-card-eyebrow">Sign in or join</p>
                                 <h2 id="poTitle" class="modal-title">Continue with your mobile</h2>
-                                <p class="modal-sub">We'll send a one-time password to verify it. Already a Hearth professional? This takes you straight to your dashboard.</p>
-                                <div class="otp-mobile-field">
+                                <p class="modal-sub" id="poIdentitySub">We'll send a one-time password to verify it. Already a Hearth professional? This takes you straight to your dashboard.</p>
+                                <div class="otp-mobile-field" id="poMobileField">
                                     <span class="otp-country-code">+91</span>
                                     <input type="tel" inputmode="numeric" maxlength="10" id="poMobile" placeholder="98765 43210" autocomplete="tel">
                                 </div>
+                                <div class="otp-mobile-field" id="poEmailField" hidden>
+                                    <input type="email" id="poEmailIdentity" placeholder="[REDACTED_EMAIL_ADDRESS_12]" autocomplete="email">
+                                </div>
                                 <p class="modal-error" id="poMobileError" hidden></p>
                                 <button type="button" class="btn btn-primary btn-ripple modal-submit" id="poSendOtpBtn">Send OTP</button>
+                                <p class="modal-switch"><button type="button" class="link-btn" id="poUseEmailBtn">Use email address instead</button></p>
                                 <p class="po-secure-note">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="2"/></svg>
                                     Your number is only used to verify your account.
@@ -629,18 +633,22 @@
                                  then verify once more via the signup OTP endpoint. -->
                             <div class="modal-screen screen-off-right" data-screen="po-account" inert aria-hidden="true">
                                 <h2 class="modal-title">Create your account</h2>
-                                <p class="modal-sub">We verified your number, but there's no Hearth account for it yet. Add a couple of details and we'll send one more code to confirm it's you.</p>
+                                <p class="modal-sub" id="poAccountSub">We verified your number, but there's no Hearth account for it yet. Add a couple of details and we'll send one more code to confirm it's you.</p>
                                 <div class="form-field">
                                     <label for="poName">Full name</label>
                                     <input type="text" id="poName" placeholder="Your name" autocomplete="name">
                                 </div>
-                                <div class="form-field">
+                                <div class="form-field" id="poEmailFormField">
                                     <label for="poEmail">Email address</label>
                                     <input type="email" id="poEmail" placeholder="you@email.com" autocomplete="email">
                                 </div>
+                                <div class="form-field" id="poMobileFormField" hidden>
+                                    <label for="poMobileProfile">Mobile number</label>
+                                    <input type="tel" inputmode="numeric" maxlength="10" id="poMobileProfile" placeholder="98765 43210" autocomplete="tel">
+                                </div>
                                 <p class="modal-error" id="poAccountError" hidden></p>
                                 <button type="button" class="btn btn-primary btn-ripple modal-submit" id="poCreateAccountBtn">Continue</button>
-                                <p class="modal-resend"><button type="button" class="link-btn" id="poTryAnotherNumberBtn">Use a different number</button></p>
+                                <p class="modal-resend"><button type="button" class="link-btn" id="poTryAnotherNumberBtn">Use a different identity</button></p>
                             </div>
 
                             <!-- Generic recoverable error after login (e.g. status lookup failed). -->
